@@ -1,39 +1,77 @@
-IMyPistonBase heightener;
-IMyPistonBase reachener;
+IMyPistonBase weldHeightener;
+IMyPistonBase weldReachener;
+IMyPistonBase camHeightener;
+IMyPistonBase camReachener;
+IMyMotorAdvancedStator camHinge;
 IMyShipController controller;
-float epsilon = 0.00001f;
+bool broken;
+
+private IMyTerminalBlock LoadBlock(string name) {
+    var block = GridTerminalSystem.GetBlockWithName(name);
+    if(block == null) {
+        broken = true;
+        throw new Exception("Oh shit! I can't find block: '" + name + "'");
+    }
+    return block;
+}
 
 public Program()
 {
     Runtime.UpdateFrequency |= UpdateFrequency.Update10;
-    heightener = GridTerminalSystem.GetBlockWithName("Welder heightener") as IMyPistonBase;
-    reachener = GridTerminalSystem.GetBlockWithName("Welder reachener") as IMyPistonBase;
-    controller = GridTerminalSystem.GetBlockWithName("Welder control seat") as IMyShipController;
-    if (heightener == null || reachener == null || controller == null) 
-    {
-        Echo("Oh my! I couldn't find that block. " + heightener + ", " + reachener + ", " + controller);
+    try {
+        weldHeightener = (IMyPistonBase) LoadBlock("Welder heightener");
+        weldHeightener = (IMyPistonBase) LoadBlock("Welder heightener");
+        weldReachener = (IMyPistonBase) LoadBlock("Welder reachener");
+        camHeightener = (IMyPistonBase) LoadBlock("Weldcam heightener");
+        camReachener = (IMyPistonBase) LoadBlock("Weldcam reachener");
+        camHinge = (IMyMotorAdvancedStator) LoadBlock("Weldcam hinge");
+        controller = (IMyShipController) LoadBlock("Welder control seat");
+        Echo("ok coolio!");
+    } catch(Exception e) {
+        Echo(e.Message);
+        broken = true;
         return;
     }
 }
 
 public void Main(string argument, UpdateType updateSource)
 {
+    if(broken) {
+        return;
+    }
+
     Vector3 command = controller.MoveIndicator;
+    float roll = controller.RollIndicator;
+
     if(command != null) {
         if(command.X < 0.0f) {
-            reachener.Velocity = -1.0f;
+            weldReachener.Velocity = -1.0f;
         } else if(command.X > 0.0f) {
-            reachener.Velocity = 1.0f;
+            weldReachener.Velocity = 1.0f;
         } else {
-            reachener.Velocity = 0.0f;
+            weldReachener.Velocity = 0.0f;
         }
 
         if(command.Z < 0.0f) {
-            heightener.Velocity = 1.0f;
+            weldHeightener.Velocity = 1.0f;
+            camHeightener.Velocity = 1.0f;
         } else if(command.Z > 0.0f) {
-            heightener.Velocity = -1.0f;
+            weldHeightener.Velocity = -1.0f;
+            camHeightener.Velocity = -1.0f;
         } else {
-            heightener.Velocity = 0.0f;
+            weldHeightener.Velocity = 0.0f;
+            camHeightener.Velocity = 0.0f;
+        }
+
+        if(roll < 0.0f) {
+            camReachener.Velocity = 2.8f;
+            camHinge.TargetVelocityRPM = 2.0f;
+        } else if(roll > 0.0f) {
+            camReachener.Velocity = -2.8f;
+            camHinge.TargetVelocityRPM = -2.0f;
+        } else {
+            camReachener.Velocity = 0.0f;
+            camHinge.TargetVelocityRPM = 0.0f;
         }
     }
 }
