@@ -4,6 +4,8 @@ bool _broken = false;
 IMyShipConnector _dockingPort;
 IMyShipController _remoteControl;
 IMyBlockGroup _allThrusters;
+List<IMyBatteryBlock> _batteries = new List<>();
+List<IMyCargoContainer> _cargo = new List<>();
 
 IMyWaypointInfo _mine;
 IMyWaypointInfo _home;
@@ -27,8 +29,11 @@ class Fly implements Action {
     }
 
     void Begin() {
-        SetFastness(beFast);
-        activateAI();
+        _remoteControl.AddWaypoint(_target);
+        _remoteControl.SetDockingMode(!beFast);
+        _remoteControl.SetCollisionAvoidance(beFast);
+        _remoteControl.SetAutopilotEnabled(true);
+        _remoteControl.FlightMode = FlightMode.OneWay;
         Runtime.UpdateFrequency = UpdateFrequency.Update100;
     }
 
@@ -37,8 +42,7 @@ class Fly implements Action {
     }
 
     Action End() {
-        clearWaypoints();
-        stopAI();
+        _remoteControl.ClearWaypoints();
 
         var nextTarget = _towardMine ? _mine : _home;
 
@@ -63,55 +67,90 @@ class Dock implements Action {
 
     void Begin() {
         SetFastness(false);
-        DockingPort.turnOn();
-        activateAI();
+        _remoteControl.SetDockingMode(true);
+        _remoteControl.SetCollisionAvoidance(false);
+        _remoteControl.SetAutopilotEnabled(true);
+        _remoteControl.FlightMode = FlightMode.OneWay;
+        DockingPort.Enabled = true;
         flyDown();
         Runtime.UpdateFrequency = UpdateFrequency.Update10;
     }
 
     bool Step() {
-        return !DockingPort.lit();
+        return _dockingPort.Status == MyShipConnectorStatus.Unconnected; // when it becomes Connectable (or weirdly, if it becomes Connected), we end this action
     }
 
     Action End() {
-        dock();
-        aiOff();
+        _dockingPort.Connect();
+        _remoteControl.SetHandbrake(true);
+        _remoteControl.SetAutopilotEnabled(false);
         return new SitAtDockingPort(_towardMine);
     }
 }
 
 class SitAtDockingPort implements Action {
     public const bool _atMine;
-    public const IMyBlockGroup _drills;
+    public const List<IMyShipDrill> _drills;
 
     SitAtDockingPort() {
-        _drills = tryGetGroup();
+        IMyBlockGroup drillsGroup = GridTerminalSystem.GetBlockGroupWithName("Downer drills");
+        _drills = new List<>();
+        if(drillsGroup != null) {
+            drillsGroup.GetBlocks(_drills);
+            _atMine = true;
+        } else {
+            _atMine = false;
+        }
     }
 
     void Begin() {
-        if(_drills != null) {
-            _drills.drillsOn();
+        foreach (var thruster in _allThrusters) {
+            thruster.Enabled = false;
+        }
+
+        if(_atMine) {
+            foreach (var drill in _drills) {
+                drill.Enabled = true;
+            }
+        } else {
+            foreach (IMyBatteryBlock battery in _batteries) {
+                battery.ChargeMode = ChargeMode.Recharge;
+            }
         }
         Runtime.UpdateFrequency = UpdateFrequency.Update100;
     }
 
     bool Step() {
-        if(_drills != null) {
-            return _bags < 1.0f;
+        if(_atMine) {
+            return _cargo.gg < 1.0f;
         } else {
             return _bags > 0.0f && _power < 1.0f;
         }
     }
 
     Action End() {
-        if(_drills != null) {
-            drillsOff();
+        foreach (var thruster in _allThrusters) {
+            thruster.Enabled = true;
         }
-        DockingPort.turnOff();
+
+        foreach (var drill in _drills) {
+            drill.Enabled = false;
+        }
+        foreach (IMyBatteryBlock battery in _batteries) {
+            battery.ChargeMode = ChargeMode.Auto;
+        }
+        _remoteControl.SetHandbrake(false);
+        _dockingPort.Disconnect();
+        _dockingPort.Enabled = false;
         if(_bags < 0.2f) {
             return new Fly(true, _home, 0.0f, false);
         }
     }
+}
+
+// returns between 0.0f and 1.0f -- the amount of cargo space that's full in our ship
+private float GetCargoPercentage() {
+    todo;
 }
 
 private IMyTerminalBlock LoadBlock(string name) {
@@ -126,8 +165,9 @@ public Program()
 {
     try {
         Runtime.UpdateFrequency = UpdateFrequency.Update100;
-        _remoteControl = LoadBlock("Drone remote control");
+        _remoteControl = (IMyRemoteControl) LoadBlock("Drone remote control");
         _dockingPort = LoadBlock("Drone connector");
+        GridTerminalSystem.GetBlocksOfType(_cargo, block => block.IsSameConstructAs(Me) && block.HasInventory());
     } catch(Exception e) {
         Echo(e.Message);
         _broken = true;
