@@ -3,13 +3,14 @@ bool _broken = false;
 
 IMyShipConnector _dockingPort;
 IMyShipController _remoteControl;
-IMyBlockGroup _allThrusters;
+List<IMyThrust> _thrusters;
 List<IMyBatteryBlock> _batteries = new List<>();
+List<IMyGyro> _gyros = new List<>();
 List<IMyCargoContainer> _cargo = new List<>();
 List<Action> _plan = new List<>();
 
-IMyWaypointInfo _mine;
-IMyWaypointInfo _home;
+MyWaypointInfo _mine;
+MyWaypointInfo _home;
 
 interface Action {
     void Begin();
@@ -18,10 +19,10 @@ interface Action {
 }
 
 class FlyToWaypoint implements Action {
-    public const IMyWaypoint _target;
+    public const MyWaypoint _target;
     public const bool _beFast;
 
-    FlyToWaypoint(IMyWaypoint target, bool beFast) {
+    FlyToWaypoint(MyWaypoint target, bool beFast) {
         _target = target;
         _beFast = beFast;
     }
@@ -105,7 +106,11 @@ class SitAtDockingPort implements Action {
     }
 
     void Begin() {
-        foreach (var thruster in _allThrusters) {
+        for(var gyro in _gyros) {
+            gyro.GyroOverride = false;
+        }
+
+        foreach (var thruster in _thrusters) {
             thruster.Enabled = false;
         }
 
@@ -130,7 +135,14 @@ class SitAtDockingPort implements Action {
     }
 
     List<Action> End() {
-        foreach (var thruster in _allThrusters) {
+        for(var gyro in _gyros) {
+            gyro.GyroOverride = true;
+            gyro.Pitch = 0;
+            gyro.Roll = 0;
+            gyro.Yaw = 0;
+        }
+
+        foreach (var thruster in _thrusters) {
             thruster.Enabled = true;
         }
 
@@ -151,13 +163,11 @@ class SitAtDockingPort implements Action {
             plan.Append(new FlyToWaypoint(_home, false));
             plan.Append(new FlyToWaypoint(_mine, true));
             plan.Append(new FlyToWaypoint(_mine, false));
-            plan.Append(new LevelOut()); // TODO
             plan.Append(new Dock(true);
         } else {
             plan.Append(new FlyToWaypoint(_mine, false));
             plan.Append(new FlyToWaypoint(_home, true));
             plan.Append(new FlyToWaypoint(_home, false));
-            plan.Append(new LevelOut());
             plan.Append(new Dock(false);
         }
         return plan;
@@ -190,10 +200,21 @@ private IMyTerminalBlock LoadBlock(string name) {
 public Program()
 {
     try {
+        List<MyWaypointInfo> waypoints = new List<MyWaypointInfo>();
+        MyWaypointInfo.FindAll(Me.CustomData, waypoints);
+        if(waypoints.Count != 2) {
+            throw new Exception("okay so you need to enter a home and a mine waypoint into custom data. Thanks!");
+        }
+        _home = waypoints[0];
+        _mine = waypoints[1];
+
         Runtime.UpdateFrequency = UpdateFrequency.Update100;
         _remoteControl = (IMyRemoteControl) LoadBlock("Drone remote control");
-        _dockingPort = LoadBlock("Drone connector");
+        _dockingPort = (IMyShipConnector) LoadBlock("Drone connector");
         GridTerminalSystem.GetBlocksOfType(_cargo, block => block.IsSameConstructAs(Me) && block.HasInventory());
+        GridTerminalSystem.GetBlocksOfType(_thrusters, block => block.IsSameConstructAs(Me));
+        GridTerminalSystem.GetBlocksOfType(_batteries, block => block.IsSameConstructAs(Me));
+        GridTerminalSystem.GetBlocksOfType(_gyros, block => block.IsSameConstructAs(Me));
     } catch(Exception e) {
         Breakdown(e.Message);
     }
