@@ -4,10 +4,10 @@ bool _broken = false;
 IMyShipConnector _dockingPort;
 IMyShipController _remoteControl;
 List<IMyThrust> _thrusters;
-List<IMyBatteryBlock> _batteries = new List<>();
-List<IMyGyro> _gyros = new List<>();
-List<IMyCargoContainer> _cargo = new List<>();
-List<Action> _plan = new List<>();
+List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
+List<IMyGyro> _gyros = new List<IMyGyro>();
+List<IMyCargoContainer> _cargo = new List<IMyCargoContainer>();
+List<Action> _plan = new List<Action>();
 
 MyWaypointInfo _mine;
 MyWaypointInfo _home;
@@ -50,7 +50,7 @@ class FlyToWaypoint implements Action {
 
     List<Action> End() {
         _remoteControl.ClearWaypoints();
-        return new List<>();
+        return new List<Action>();
     }
 }
 
@@ -84,7 +84,7 @@ class Dock implements Action {
         _remoteControl.SetHandbrake(true);
         _remoteControl.SetAutopilotEnabled(false);
 
-        List<Action> plan = new List<>();
+        List<Action> plan = new List<Action>();
         plan.Append(new SitAtDockingPort(_towardMine));
         return plan;
     }
@@ -96,7 +96,7 @@ class SitAtDockingPort implements Action {
 
     SitAtDockingPort() {
         IMyBlockGroup drillsGroup = GridTerminalSystem.GetBlockGroupWithName("Downer drills");
-        _drills = new List<>();
+        _drills = new List<IMyShipDrill>();
         if(drillsGroup != null) {
             drillsGroup.GetBlocks(_drills);
             _atMine = true;
@@ -128,9 +128,9 @@ class SitAtDockingPort implements Action {
     bool Step() {
         ReportStatus(String.Format("Dock: {0}, {1}", _atMine, _drills.Count);
         if(_atMine) {
-            return _cargo.gg < 1.0f;
+            return CargoFullness < 0.9f;
         } else {
-            return _bags > 0.0f && _power < 1.0f;
+            return CargoFullness() > 0.01f && _power < 0.9f;
         }
     }
 
@@ -158,25 +158,34 @@ class SitAtDockingPort implements Action {
         _dockingPort.Disconnect();
         _dockingPort.Enabled = false;
 
-        List<Action> plan = new List<>();
-        if(_bags < 0.2f) {
-            plan.Append(new FlyToWaypoint(_home, false));
-            plan.Append(new FlyToWaypoint(_mine, true));
-            plan.Append(new FlyToWaypoint(_mine, false));
-            plan.Append(new Dock(true);
-        } else {
+        List<Action> plan = new List<Action>();
+        if(_atMine) {
             plan.Append(new FlyToWaypoint(_mine, false));
             plan.Append(new FlyToWaypoint(_home, true));
             plan.Append(new FlyToWaypoint(_home, false));
             plan.Append(new Dock(false);
+        } else {
+            plan.Append(new FlyToWaypoint(_home, false));
+            plan.Append(new FlyToWaypoint(_mine, true));
+            plan.Append(new FlyToWaypoint(_mine, false));
+            plan.Append(new Dock(true);
         }
         return plan;
     }
 }
 
-// returns between 0.0f and 1.0f -- the amount of cargo space that's full in our ship
-private float GetCargoPercentage() {
-    TODO
+// returns between 0.0f and 1.0f to represent the amount of cargo space that's full in our ship
+private float CargoFullness() {
+    long capacityMicrolitres = 0;
+    long storedCargoMicrolitres = 0;
+
+    for(var cargo in _cargo) {
+        var inventory = cargo.GetInventory();
+        capacityMicrolitres += inventory.MaxVolume.RawValue;
+        storedCargoMicrolitres += inventory.CurrentVolume.RawValue;
+    }
+
+    return ((float)storedCargoMicrolitres) / ((float)capacityMicrolitres);
 }
 
 private void ReportStatus(string message) {
