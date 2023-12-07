@@ -6,6 +6,7 @@ IMyShipController _remoteControl;
 IMyBlockGroup _allThrusters;
 List<IMyBatteryBlock> _batteries = new List<>();
 List<IMyCargoContainer> _cargo = new List<>();
+List<Action> _plan = new List<>();
 
 IMyWaypointInfo _mine;
 IMyWaypointInfo _home;
@@ -13,48 +14,42 @@ IMyWaypointInfo _home;
 interface Action {
     void Begin();
     bool Step();
-    Action End();
+    List<Action> void End();
 }
 
-class Fly implements Action {
+class FlyToWaypoint implements Action {
     public const IMyWaypoint _target;
-    public const float _desiredCloseness;
     public const bool _beFast;
-    public const bool _towardMine;
 
-    Fly(bool _towardMine, IMyWaypoint target, float desiredCloseness, bool beFast) {
+    FlyToWaypoint(IMyWaypoint target, bool beFast) {
         _target = target;
-        _desiredCloseness = desiredCloseness;
         _beFast = beFast;
     }
 
     void Begin() {
+        _remoteControl.SpeedLimit = 20.0f;
         _remoteControl.AddWaypoint(_target);
         _remoteControl.SetDockingMode(!beFast);
         _remoteControl.SetCollisionAvoidance(beFast);
         _remoteControl.SetAutopilotEnabled(true);
         _remoteControl.FlightMode = FlightMode.OneWay;
-        Runtime.UpdateFrequency = UpdateFrequency.Update100;
+        _remoteControl.WaitForFreeWay = false;
     }
 
     bool Step() {
-        return MeIsNear(Target, DesiredCloseness);
+        float desiredCloseness;
+        if(_beFast) {
+            desiredCloseness = 50.0f;
+        } else {
+            desiredCloseness = 0.0f;
+        }
+        ReportStatus(String.Format("FlyToWaypoint: {0}, {1}", _target, _beFast));
+        return Vector3.Distance(_dockingPort.Position, _target.Coords) <= desiredCloseness;
     }
 
-    Action End() {
+    List<Action> End() {
         _remoteControl.ClearWaypoints();
-
-        var nextTarget = _towardMine ? _mine : _home;
-
-        if(_target == nextTarget) {
-            if(_beFast) {
-                return new Fly(_towardMine, nextTarget, 0.0f, false);
-            } else {
-                return new Dock(_towardMine);
-            }
-        } else {
-            return new Fly(_towardMine, nextTarget, 50.0f, true);
-        }
+        return new List<>();
     }
 }
 
@@ -66,25 +61,31 @@ class Dock implements Action {
     }
 
     void Begin() {
-        SetFastness(false);
+        Runtime.UpdateFrequency |= UpdateFrequency.Update10;
+        _remoteControl.FlightMode = FlightMode.OneWay;
+        DockingPort.Enabled = true;
+        _remoteControl.Direction = Direction.Down;
+        _remoteControl.SpeedLimit = 1.0f;
         _remoteControl.SetDockingMode(true);
         _remoteControl.SetCollisionAvoidance(false);
         _remoteControl.SetAutopilotEnabled(true);
-        _remoteControl.FlightMode = FlightMode.OneWay;
-        DockingPort.Enabled = true;
-        flyDown();
-        Runtime.UpdateFrequency = UpdateFrequency.Update10;
     }
 
     bool Step() {
-        return _dockingPort.Status == MyShipConnectorStatus.Unconnected; // when it becomes Connectable (or weirdly, if it becomes Connected), we end this action
+        ReportStatus(String.Format("Dock: {0}", _towardMine);
+        return _dockingPort.Status == MyShipConnectorStatus.Unconnected; // when it becomes Connectable (or weirdly, if it becomes Connected), we end this action and assume we're docked
     }
 
-    Action End() {
+    List<Action> End() {
+        Runtime.UpdateFrequency &= ~UpdateFrequency.Update10;
+
         _dockingPort.Connect();
         _remoteControl.SetHandbrake(true);
         _remoteControl.SetAutopilotEnabled(false);
-        return new SitAtDockingPort(_towardMine);
+
+        List<Action> plan = new List<>();
+        plan.Append(new SitAtDockingPort(_towardMine));
+        return plan;
     }
 }
 
@@ -117,10 +118,10 @@ class SitAtDockingPort implements Action {
                 battery.ChargeMode = ChargeMode.Recharge;
             }
         }
-        Runtime.UpdateFrequency = UpdateFrequency.Update100;
     }
 
     bool Step() {
+        ReportStatus(String.Format("Dock: {0}, {1}", _atMine, _drills.Count);
         if(_atMine) {
             return _cargo.gg < 1.0f;
         } else {
@@ -128,7 +129,7 @@ class SitAtDockingPort implements Action {
         }
     }
 
-    Action End() {
+    List<Action> End() {
         foreach (var thruster in _allThrusters) {
             thruster.Enabled = true;
         }
@@ -136,21 +137,46 @@ class SitAtDockingPort implements Action {
         foreach (var drill in _drills) {
             drill.Enabled = false;
         }
+
         foreach (IMyBatteryBlock battery in _batteries) {
             battery.ChargeMode = ChargeMode.Auto;
         }
+
         _remoteControl.SetHandbrake(false);
         _dockingPort.Disconnect();
         _dockingPort.Enabled = false;
+
+        List<Action> plan = new List<>();
         if(_bags < 0.2f) {
-            return new Fly(true, _home, 0.0f, false);
+            plan.Append(new FlyToWaypoint(_home, false));
+            plan.Append(new FlyToWaypoint(_mine, true));
+            plan.Append(new FlyToWaypoint(_mine, false));
+            plan.Append(new LevelOut()); // TODO
+            plan.Append(new Dock(true);
+        } else {
+            plan.Append(new FlyToWaypoint(_mine, false));
+            plan.Append(new FlyToWaypoint(_home, true));
+            plan.Append(new FlyToWaypoint(_home, false));
+            plan.Append(new LevelOut());
+            plan.Append(new Dock(false);
         }
+        return plan;
     }
 }
 
 // returns between 0.0f and 1.0f -- the amount of cargo space that's full in our ship
 private float GetCargoPercentage() {
-    todo;
+    TODO
+}
+
+private void ReportStatus(string message) {
+    Echo(message);
+}
+
+private void Breakdown(string message) {
+    ReportStatus(message);
+    _broken = true;
+    Runtime.UpdateFrequency = 0;
 }
 
 private IMyTerminalBlock LoadBlock(string name) {
@@ -169,9 +195,7 @@ public Program()
         _dockingPort = LoadBlock("Drone connector");
         GridTerminalSystem.GetBlocksOfType(_cargo, block => block.IsSameConstructAs(Me) && block.HasInventory());
     } catch(Exception e) {
-        Echo(e.Message);
-        _broken = true;
-        Runtime.UpdateFrequency = 0;
+        Breakdown(e.Message);
     }
 }
 
@@ -181,18 +205,25 @@ public void Main(string argument, UpdateType updateSource)
         return;
     }
 
-    if(_action == null) {
-        if(_dockingPort.IsConnected()) {
-            _action = new SitAtDockingPort();
+    try {
+        if(_plan.IsEmpty()) {
+            if(_dockingPort.IsConnected()) {
+                _plan.append(new SitAtDockingPort());
+                _plan[0].Begin();
+            } else {
+                Breakdown("plz help me get to a docking port and then reboot me thx");
+            }
         } else {
-            Echo("plz help me get to a docking port and then reboot me thx");
-            Runtime.UpdateFrequency = 0;
-            _broken = true;
+            var action = _plan[0];
+            if(!action.Step()) {
+                _plan.Remove(0);
+                _plan.AddRange(action.End());
+                if(!_plan.IsEmpty()) {
+                    _plan[0].Begin();
+                }
+            }
         }
-    }
-
-    if(!_action.Step()) {
-        _action = _action.End();
-        _action.Begin();
+    } catch(Exception e) {
+        Breakdown(e.Message);
     }
 }
