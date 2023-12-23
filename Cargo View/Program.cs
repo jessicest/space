@@ -13,6 +13,7 @@ namespace IngameScript {
     partial class Program : MyGridProgram {
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         private int _counter = 0;
 
         private IMyTerminalBlock LoadBlock(string name) {
@@ -32,21 +33,30 @@ namespace IngameScript {
                 Reinit();
             }
             _counter -= 1;
-            Show(CountTypes());
+
+            Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
+            CountCargoTypes(cargoCounts);
+            CountProduction(cargoCounts);
+            Show(cargoCounts);
         }
 
         private void Reinit() {
             _counter = 1000;
+
             _cargos.Clear();
             GridTerminalSystem.GetBlocksOfType(_cargos,
                 block => block.IsSameConstructAs(Me) && block.HasInventory);
+
+            _assemblers.Clear();
+            GridTerminalSystem.GetBlocksOfType(_assemblers,
+                block => block.IsSameConstructAs(Me));
+
             _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
                 block => block.IsSameConstructAs(Me) && block.CustomName.StartsWith("Cargo Info:"));
         }
 
-        private Dictionary<string, SortedDictionary<string, MyFixedPoint>> CountTypes() {
-            Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
+        private void CountCargoTypes(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
             foreach (IMyCargoContainer cargo in _cargos) {
@@ -72,8 +82,25 @@ namespace IngameScript {
                     }
                 }
             }
+        }
+        private void CountProduction(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
+            SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
+            List<MyProductionItem> items = new List<MyProductionItem>();
 
-            return cargoCounts;
+            foreach (IMyAssembler a in _assemblers) {
+                a.GetQueue(items);
+
+                foreach (MyProductionItem item in items) {
+                    string id = item.BlueprintId.SubtypeName;
+                    if (!counts.ContainsKey(id)) {
+                        counts.Add(id, item.Amount);
+                    } else {
+                        counts[id] += item.Amount;
+                    }
+                }
+            }
+
+            cargoCounts.Add("Production", counts);
         }
 
         private void Show(Dictionary<string, SortedDictionary<string, MyFixedPoint>> typeCounts) {
