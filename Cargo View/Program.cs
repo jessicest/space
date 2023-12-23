@@ -12,7 +12,7 @@ using VRageRender;
 namespace IngameScript {
     partial class Program : MyGridProgram {
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
-        private readonly List<IMyCargoContainer> _cargos = new List<IMyCargoContainer>();
+        private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private int _counter = 0;
 
         private IMyTerminalBlock LoadBlock(string name) {
@@ -38,7 +38,8 @@ namespace IngameScript {
         private void Reinit() {
             _counter = 1000;
             _cargos.Clear();
-            GridTerminalSystem.GetBlocksOfType(_cargos, block => block.IsSameConstructAs(Me));
+            GridTerminalSystem.GetBlocksOfType(_cargos,
+                block => block.IsSameConstructAs(Me) && block.HasInventory);
             _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
                 block => block.IsSameConstructAs(Me) && block.CustomName.StartsWith("Cargo Info:"));
@@ -96,13 +97,22 @@ namespace IngameScript {
                     continue;
                 }
 
-                string lcdName = lcd.CustomName;
-                string targetNamePrefix = lcdName.Substring(lcdName.IndexOf(':') + 1);
-                string targetName = targetNamePrefix.Substring(0, targetNamePrefix.IndexOf(':'));
-                string content;
-                if (outputs.TryGetValue(targetName, out content)) {
-                    lcd.WriteText(content);
+                string[] lcdNameParts = lcd.CustomName.Split(':');
+                if (lcdNameParts.Length != 4) {
+                    continue;
                 }
+
+                string[] targetNames = lcdNameParts[2].Split(',');
+                string content;
+                string s = "";
+
+                foreach (string targetName in targetNames) {
+                    if (outputs.TryGetValue(targetName, out content)) {
+                        s += content + "\n\n";
+                    }
+                }
+
+                lcd.WriteText(s);
             }
         }
     }
