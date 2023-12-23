@@ -22,21 +22,24 @@ namespace IngameScript {
     partial class Program {
         public class SitAtDockingPort : Action {
             public readonly Program _program;
-            public bool _atMine;
-            public readonly List<IMyShipDrill> _drills;
+            public readonly bool _atMine;
             public readonly IMyShipConnector _dockingPort;
             public readonly IMyRemoteControl _remoteControl;
             public readonly List<IMyThrust> _thrusters;
-            public readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
-            public readonly List<IMyGyro> _gyros = new List<IMyGyro>();
-            public readonly List<IMyCargoContainer> _cargo = new List<IMyCargoContainer>();
+            public readonly List<IMyBatteryBlock> _batteries;
+            public readonly List<IMyGyro> _gyros;
+            public readonly List<IMyCargoContainer> _cargo;
+            public readonly List<IMyShipDrill> _drills = new List<IMyShipDrill>();
 
-            public SitAtDockingPort(Program program, IMyShipConnector dockingPort, IMyRemoteControl remoteControl, List<IMyThrust> thrusters, List<IMyBatteryBlock> batteries) {
+            public SitAtDockingPort(Program program, bool atMine, IMyShipConnector dockingPort, IMyRemoteControl remoteControl, List<IMyGyro> gyros, List<IMyCargoContainer> cargo, List<IMyThrust> thrusters, List<IMyBatteryBlock> batteries) {
                 _program = program;
+                _atMine = atMine;
                 _dockingPort = dockingPort;
                 _remoteControl = remoteControl;
                 _thrusters = thrusters;
                 _batteries = batteries;
+                _cargo = cargo;
+                _gyros = gyros;
             }
 
             public void Begin() {
@@ -48,14 +51,12 @@ namespace IngameScript {
                     thruster.Enabled = false;
                 }
 
-                _program.GridTerminalSystem.GetBlocksOfType(_drills);
-                if (_drills.Count > 0) {
-                    _atMine = true;
+                if (_atMine) {
+                    _program.GridTerminalSystem.GetBlocksOfType(_drills);
                     foreach (var drill in _drills) {
                         drill.Enabled = true;
                     }
                 } else {
-                    _atMine = false;
                     foreach (IMyBatteryBlock battery in _batteries) {
                         battery.ChargeMode = ChargeMode.Recharge;
                     }
@@ -98,15 +99,15 @@ namespace IngameScript {
 
                 List<Action> plan = new List<Action>();
                 if (_atMine) {
-                    plan.Append(new FlyToWaypoint(_program, _program._mine, false, _remoteControl, _dockingPort));
-                    plan.Append(new FlyToWaypoint(_program, _program._home, true, _remoteControl, _dockingPort));
-                    plan.Append(new FlyToWaypoint(_program, _program._home, false, _remoteControl, _dockingPort));
-                    plan.Append(new Dock(_program, false, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._mine, false, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._home, true, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._home, false, _remoteControl, _dockingPort));
+                    plan.Add(new Dock(_program, false, _remoteControl, _dockingPort));
                 } else {
-                    plan.Append(new FlyToWaypoint(_program, _program._home, false, _remoteControl, _dockingPort));
-                    plan.Append(new FlyToWaypoint(_program, _program._mine, true, _remoteControl, _dockingPort));
-                    plan.Append(new FlyToWaypoint(_program, _program._mine, false, _remoteControl, _dockingPort));
-                    plan.Append(new Dock(_program, true, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._home, false, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._mine, true, _remoteControl, _dockingPort));
+                    plan.Add(new FlyToWaypoint(_program, _program._mine, false, _remoteControl, _dockingPort));
+                    plan.Add(new Dock(_program, true, _remoteControl, _dockingPort));
                 }
                 return plan;
             }

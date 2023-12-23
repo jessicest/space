@@ -17,7 +17,6 @@ using VRage.Game.ModAPI.Ingame;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using VRage.Game.ObjectBuilders.Definitions;
 using VRageMath;
-using static VRageMath.Base6Directions;
 
 namespace IngameScript {
     partial class Program {
@@ -38,7 +37,7 @@ namespace IngameScript {
                 _program.Runtime.UpdateFrequency |= UpdateFrequency.Update10;
                 _remoteControl.FlightMode = FlightMode.OneWay;
                 _dockingPort.Enabled = true;
-                _remoteControl.Direction = Direction.Down;
+                _remoteControl.Direction = Base6Directions.Direction.Down;
                 _remoteControl.SpeedLimit = 1.0f;
                 _remoteControl.SetDockingMode(true);
                 _remoteControl.SetCollisionAvoidance(false);
@@ -57,7 +56,7 @@ namespace IngameScript {
                 _remoteControl.SetAutoPilotEnabled(false);
 
                 List<Action> plan = new List<Action>();
-                plan.Append(new SitAtDockingPort(_program, _dockingPort, _remoteControl, _program._thrusters, _program._batteries));
+                plan.Add(new SitAtDockingPort(_program,_towardMine, _dockingPort, _remoteControl, _program._gyros, _program._cargo, _program._thrusters, _program._batteries));
                 return plan;
             }
         }

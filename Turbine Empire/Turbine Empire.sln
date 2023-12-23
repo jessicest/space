@@ -5,6 +5,8 @@ VisualStudioVersion = 17.8.34322.80
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Turbine Empire", "Turbine Empire.csproj", "{88532855-60D4-4141-95DF-164FF1D3BECD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cargo View", "..\Cargo View\Cargo View.csproj", "{B090BF2D-D1EB-4D3F-AC20-8182C0F29645}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -12,6 +14,8 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{88532855-60D4-4141-95DF-164FF1D3BECD}.Debug|x64.ActiveCfg = Debug|x64
 		{88532855-60D4-4141-95DF-164FF1D3BECD}.Debug|x64.Build.0 = Debug|x64
+		{B090BF2D-D1EB-4D3F-AC20-8182C0F29645}.Debug|x64.ActiveCfg = Debug|x64
+		{B090BF2D-D1EB-4D3F-AC20-8182C0F29645}.Debug|x64.Build.0 = Debug|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

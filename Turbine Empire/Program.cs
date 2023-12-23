@@ -29,7 +29,7 @@ namespace IngameScript {
 
         public readonly IMyShipConnector _dockingPort;
         public readonly IMyRemoteControl _remoteControl;
-        public readonly List<IMyThrust> _thrusters;
+        public readonly List<IMyThrust> _thrusters = new List<IMyThrust>();
         public readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
         public readonly List<IMyGyro> _gyros = new List<IMyGyro>();
         public readonly List<IMyCargoContainer> _cargo = new List<IMyCargoContainer>();
@@ -65,7 +65,7 @@ namespace IngameScript {
         }
 
         public void ReportStatus(string message) {
-            Echo(message);
+            Echo("home: " + _home + "\n" + "mine: " + _mine + "\n" + message);
         }
 
         private void Breakdown(string message) {
@@ -93,14 +93,14 @@ namespace IngameScript {
                 _mine = waypoints[1];
 
                 Runtime.UpdateFrequency = UpdateFrequency.Update100;
-                _remoteControl = (IMyRemoteControl)LoadBlock("Drone remote control");
-                _dockingPort = (IMyShipConnector)LoadBlock("Drone connector");
+                _remoteControl = (IMyRemoteControl)LoadBlock("Drone Remote Control");
+                _dockingPort = (IMyShipConnector)LoadBlock("Drone Connector");
                 GridTerminalSystem.GetBlocksOfType(_cargo, block => block.IsSameConstructAs(Me) && block.HasInventory);
                 GridTerminalSystem.GetBlocksOfType(_thrusters, block => block.IsSameConstructAs(Me));
                 GridTerminalSystem.GetBlocksOfType(_batteries, block => block.IsSameConstructAs(Me));
                 GridTerminalSystem.GetBlocksOfType(_gyros, block => block.IsSameConstructAs(Me));
             } catch (Exception e) {
-                Breakdown(e.Message);
+                Breakdown(e.Message + "\n" + e.StackTrace);
             }
         }
 
@@ -112,10 +112,11 @@ namespace IngameScript {
             try {
                 if (_plan.Count == 0) {
                     if (_dockingPort.IsConnected) {
-                        _plan.Append(new SitAtDockingPort(this, _dockingPort, _remoteControl, _thrusters, _batteries));
+                        _plan.Add(new SitAtDockingPort(this, false, _dockingPort, _remoteControl, _gyros, _cargo, _thrusters, _batteries));
                         _plan[0].Begin();
                     } else {
                         Breakdown("plz help me get to a docking port and then reboot me thx");
+                        return;
                     }
                 } else {
                     var action = _plan[0];
@@ -128,7 +129,7 @@ namespace IngameScript {
                     }
                 }
             } catch (Exception e) {
-                Breakdown(e.Message);
+                Breakdown(e.Message + "\n" + e.StackTrace);
             }
         }
     }
