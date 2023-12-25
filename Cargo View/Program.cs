@@ -59,7 +59,7 @@ namespace IngameScript {
         private void CountCargoTypes(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
-            foreach (IMyCargoContainer cargo in _cargos) {
+            foreach (IMyTerminalBlock cargo in _cargos) {
                 if (!cargo.IsFunctional) {
                     continue;
                 }
