@@ -64,9 +64,9 @@ namespace IngameScript {
             _reinit_counter -= 1;
 
             Dictionary<string, string> infos = new Dictionary<string, string>();
-            CollectGridStats(infos);
-            CountCargoTypes(infos);
-            CountProduction(infos, true);
+            CompileGridTidbits(infos);
+            CompileCargoTypes(infos);
+            CompileProductionInfos(infos, true);
 
             EchoScriptInfo(infos);
             WriteLCDs(infos);
@@ -151,7 +151,7 @@ namespace IngameScript {
             return result;
         }
 
-        private void CollectGridStats(Dictionary<string, string> infos) {
+        private void CompileGridTidbits(Dictionary<string, string> infos) {
             string s = Me.CubeGrid.CustomName + " Stats\n\n";
 
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
@@ -168,10 +168,10 @@ namespace IngameScript {
             s += "Turrets, idle:" + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
             s += "Turrets, targeting:" + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
 
-            infos.Add("GridStats", s);
+            infos.Add("GridTidbits", s);
         }
 
-        private void CountCargoTypes(Dictionary<string, string> infos) {
+        private void CompileCargoTypes(Dictionary<string, string> infos) {
             Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
@@ -226,7 +226,7 @@ namespace IngameScript {
             return false;
         }
 
-        private void CountProduction(Dictionary<string, string> infos, bool clearAssemblers = true) {
+        private void CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
             SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
             bool recycledSomething = false;
