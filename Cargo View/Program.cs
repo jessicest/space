@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Sandbox.Definitions;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Gui;
 using Sandbox.ModAPI.Ingame;
@@ -14,7 +15,9 @@ namespace IngameScript {
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
+        private IMyCargoContainer _recycle_bin;
         private int _counter = 0;
+        private bool _echoed = false;
 
         private IMyTerminalBlock LoadBlock(string name) {
             var block = GridTerminalSystem.GetBlockWithName(name);
@@ -36,12 +39,14 @@ namespace IngameScript {
 
             Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
             CountCargoTypes(cargoCounts);
-            CountProduction(cargoCounts);
+            CountProduction(cargoCounts, true);
             Show(cargoCounts);
         }
 
         private void Reinit() {
             _counter = 1000;
+
+            _recycle_bin = (IMyCargoContainer)GridTerminalSystem.GetBlockWithName("Recycle Bin");
 
             _cargos.Clear();
             GridTerminalSystem.GetBlocksOfType(_cargos,
@@ -59,11 +64,7 @@ namespace IngameScript {
         private void CountCargoTypes(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
-            foreach (IMyTerminalBlock cargo in _cargos) {
-                if (!cargo.IsFunctional) {
-                    continue;
-                }
-
+            foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
                 for (int i = 0; i < cargo.InventoryCount; ++i) {
                     items.Clear();
                     cargo.GetInventory(i).GetItems(items);
@@ -83,11 +84,38 @@ namespace IngameScript {
                 }
             }
         }
-        private void CountProduction(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
+
+        private bool RecycleSomethingFrom(IMyAssembler assembler) {
+            if (_recycle_bin != null && _recycle_bin.IsWorking) {
+                IMyInventory target = _recycle_bin.GetInventory(0);
+                if (target.VolumeFillFactor <= 0.01f) {
+                    // remove items from any assembler if its queue is clear and its inventory is over 40% full
+                    for (int i = 0; i < assembler.InventoryCount; ++i) {
+                        IMyInventory inventory = assembler.GetInventory(i);
+                        if (inventory.VolumeFillFactor >= 0.4f) {
+                            List<MyInventoryItem> cruft = new List<MyInventoryItem>();
+
+                            inventory.GetItems(cruft);
+                            foreach (MyInventoryItem thing in cruft) {
+                                if (inventory.CanTransferItemTo(target, thing.Type)) {
+                                    inventory.TransferItemTo(target, thing);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private void CountProduction(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts, bool clearAssemblers = true) {
             SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
+            bool recycledSomething = false;
 
-            foreach (IMyAssembler a in _assemblers) {
+            foreach (IMyAssembler a in _assemblers.Where(a => a.IsWorking)) {
                 a.GetQueue(items);
 
                 foreach (MyProductionItem item in items) {
@@ -97,6 +125,10 @@ namespace IngameScript {
                     } else {
                         counts[id] += item.Amount;
                     }
+                }
+
+                if (clearAssemblers && !recycledSomething && items.Count == 0) {
+                    recycledSomething = RecycleSomethingFrom(a);
                 }
             }
 
@@ -117,7 +149,10 @@ namespace IngameScript {
                 outputs.Add(typeId, s);
             }
 
-            Echo(String.Join(", ", outputs.Keys.ToArray()));
+            if (!_echoed) {
+                Echo("Cargo Info v1.1\n\nCargo types:\n" + String.Join(", ", outputs.Keys.ToArray()));
+                _echoed = true;
+            }
 
             foreach (IMyTextPanel lcd in _lcds) {
                 if (!lcd.IsFunctional) {

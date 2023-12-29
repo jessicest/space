@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cargo View", "..\Cargo View
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docky", "..\Butler\Docky.csproj", "{0F246F5A-3A29-4E34-A2F4-291D974817EC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Airlock", "..\Airlock\Airlock.csproj", "{37124B48-90A6-4560-8FCB-EAACDAB0DE73}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -20,6 +22,8 @@ Global
 		{B090BF2D-D1EB-4D3F-AC20-8182C0F29645}.Debug|x64.Build.0 = Debug|x64
 		{0F246F5A-3A29-4E34-A2F4-291D974817EC}.Debug|x64.ActiveCfg = Debug|x64
 		{0F246F5A-3A29-4E34-A2F4-291D974817EC}.Debug|x64.Build.0 = Debug|x64
+		{37124B48-90A6-4560-8FCB-EAACDAB0DE73}.Debug|x64.ActiveCfg = Debug|x64
+		{37124B48-90A6-4560-8FCB-EAACDAB0DE73}.Debug|x64.Build.0 = Debug|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
