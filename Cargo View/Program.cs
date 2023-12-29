@@ -64,12 +64,10 @@ namespace IngameScript {
             }
             _reinit_counter -= 1;
 
-            Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
-            CollectGridStats(cargoCounts);
-            CountCargoTypes(cargoCounts);
-            CountProduction(cargoCounts, true);
-
-            Dictionary<string, string> infos = BuildInfos(cargoCounts);
+            Dictionary<string, string> infos = new Dictionary<string, string>();
+            CollectGridStats(infos);
+            CountCargoTypes(infos);
+            CountProduction(infos, true);
 
             EchoScriptInfo(infos);
             WriteLCDs(infos);
@@ -154,23 +152,27 @@ namespace IngameScript {
             return result;
         }
 
-        private void CollectGridStats(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
+        private void CollectGridStats(Dictionary<string, string> infos) {
+            string s = Me.CubeGrid.CustomName + " Stats\n\n";
+
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
-            SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
-            counts.Add("Battery input %:", 100 * CountFullness(_batteries, b => b.CurrentInput, b => b.MaxInput));
-            counts.Add("Battery output %:", 100 * CountFullness(_batteries, b => b.CurrentOutput, b => b.MaxOutput));
-            counts.Add("Battery stored %:", 100 * CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower));
-            counts.Add("Cargo mass (t):", (MyFixedPoint)((int)QueryInventories(_cargos, inv => inv.CurrentMass) / 1000));
-            counts.Add("Script uptime:", (MyFixedPoint)(DateTime.Now - _start_time).TotalDays);
-            counts.Add("Docked ships:", _connectors.Where(c => c.IsWorking && c.IsConnected).Count());
-            counts.Add("Hydrogen %:", 100 * CountFullness(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity));
-            counts.Add("Oxygen %:", 100 * CountFullness(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity));
-            counts.Add("Turrets, idle:", _turrets.Where(t => t.IsWorking && !t.HasTarget).Count());
-            counts.Add("Turrets, targeting:", _turrets.Where(t => t.IsWorking && t.HasTarget).Count());
-            cargoCounts.Add("GridStats", counts);
+            s += "Battery input: " + (100 * CountFullness(_batteries, b => b.CurrentInput, b => b.MaxInput)) + "%\n";
+            s += "Battery output:" + (100 * CountFullness(_batteries, b => b.CurrentOutput, b => b.MaxOutput)) + "%\n";
+            s += "Battery stored: " + (100 * CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower)) + "%\n";
+            s += "Cargo mass:" + ((int)QueryInventories(_cargos, inv => inv.CurrentMass) / 1000) + "t\n";
+            s += "Docked ships: " + _connectors.Where(c => c.IsWorking && c.IsConnected).Count() + "\n";
+            s += "Hydrogen:" + (100 * CountFullness(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
+            s += "Oxygen:" + (100 * CountFullness(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
+            s += "Script activity: " + ((DateTime.Now.ToString())) + "\n";
+            s += "Script uptime: " + ((DateTime.Now - _start_time).TotalDays) + " days\n";
+            s += "Turrets, idle:" + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
+            s += "Turrets, targeting:" + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
+
+            infos.Add("GridStats", s);
         }
 
-        private void CountCargoTypes(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts) {
+        private void CountCargoTypes(Dictionary<string, string> infos) {
+            Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
             foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
@@ -191,6 +193,11 @@ namespace IngameScript {
                         }
                     }
                 }
+            }
+
+            foreach (KeyValuePair<string, SortedDictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
+                string category = categoryCounts.Key.Substring(categoryCounts.Key.IndexOf("_") + 1);
+                WriteInfos(infos, category, categoryCounts.Value);
             }
         }
 
@@ -219,7 +226,7 @@ namespace IngameScript {
             return false;
         }
 
-        private void CountProduction(Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts, bool clearAssemblers = true) {
+        private void CountProduction(Dictionary<string, string> infos, bool clearAssemblers = true) {
             SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
             bool recycledSomething = false;
@@ -241,24 +248,17 @@ namespace IngameScript {
                 }
             }
 
-            cargoCounts.Add("Production", counts);
+            WriteInfos(infos, "Production", counts);
         }
 
-        private Dictionary<string, string> BuildInfos(Dictionary<string, SortedDictionary<string, MyFixedPoint>> typeCounts) {
-            Dictionary<string, string> infos = new Dictionary<string, string>();
+        void WriteInfos(Dictionary<string, string> infos, string category, SortedDictionary<string, MyFixedPoint> counts) {
+            string s = category + "\n\n";
 
-            foreach (KeyValuePair<string, SortedDictionary<string, MyFixedPoint>> subtypeCounts in typeCounts) {
-                string typeId = subtypeCounts.Key.Substring(subtypeCounts.Key.IndexOf("_") + 1);
-                string s = typeId + "\n\n";
-
-                foreach (KeyValuePair<string, MyFixedPoint> subtypeCount in subtypeCounts.Value) {
-                    s += subtypeCount.Key + ": " + subtypeCount.Value.ToIntSafe() + "\n";
-                }
-
-                infos.Add(typeId, s);
+            foreach (KeyValuePair<string, MyFixedPoint> subtypeCount in counts) {
+                s += subtypeCount.Key + ": " + subtypeCount.Value.ToIntSafe() + "\n";
             }
 
-            return infos;
+            infos.Add(category, s);
         }
 
         void EchoScriptInfo(Dictionary<string, string> infos) {
