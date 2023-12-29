@@ -12,6 +12,7 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
+        private const string _version = "1.1";
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
@@ -47,7 +48,6 @@ namespace IngameScript {
             IGC.RegisterBroadcastListener("cargo info");
 
             _start_time = DateTime.Now;
-            _last_broadcast_time = DateTime.MinValue;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
 
             DateTime.TryParse(Storage, out _start_time);
@@ -164,6 +164,7 @@ namespace IngameScript {
             s += "Oxygen:" + (100 * CountFullness(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
             s += "Script activity: " + ((DateTime.Now.ToString())) + "\n";
             s += "Script uptime: " + ((DateTime.Now - _start_time).TotalDays) + " days\n";
+            s += "Script version: v" + _version + "\n";
             s += "Turrets, idle:" + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
             s += "Turrets, targeting:" + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
 
@@ -262,7 +263,7 @@ namespace IngameScript {
 
         void EchoScriptInfo(Dictionary<string, string> infos) {
             if (!_echoed) {
-                Echo("Cargo Info v1.1\n\nCargo types:\n" + String.Join(", ", infos.Keys.ToArray()));
+                Echo("Cargo Info v" + _version + "\n\nCargo types:\n" + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
         }
