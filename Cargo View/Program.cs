@@ -22,7 +22,6 @@ namespace IngameScript {
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
         private IMyCargoContainer _recycle_bin;
         private readonly DateTime _start_time;
-        private DateTime _last_broadcast_time;
         private int _reinit_counter = 0;
         private bool _echoed = false;
 
@@ -309,11 +308,6 @@ namespace IngameScript {
         }
 
         void BroadcastInfos(Dictionary<string, string> infos) {
-            if (DateTime.Now - _last_broadcast_time < TimeSpan.FromHours(1)) {
-                return;
-            }
-            _last_broadcast_time = DateTime.Now;
-
             IGC.SendBroadcastMessage("cargo info", new Message(Me.CubeGrid.CustomName, infos));
         }
     }
