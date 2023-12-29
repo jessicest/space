@@ -22,8 +22,19 @@ namespace IngameScript {
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
         private IMyCargoContainer _recycle_bin;
         private readonly DateTime _start_time;
-        private int _counter = 0;
+        private DateTime _last_broadcast_time;
+        private int _reinit_counter = 0;
         private bool _echoed = false;
+
+        struct Message {
+            public string GridName;
+            public Dictionary<string, string> Infos;
+
+            public Message(string customName, Dictionary<string, string> infos) {
+                this.GridName = customName;
+                this.Infos = infos;
+            }
+        }
 
         private IMyTerminalBlock LoadBlock(string name) {
             var block = GridTerminalSystem.GetBlockWithName(name);
@@ -34,25 +45,39 @@ namespace IngameScript {
         }
 
         public Program() {
+            IGC.RegisterBroadcastListener("cargo info");
+
             _start_time = DateTime.Now;
+            _last_broadcast_time = DateTime.MinValue;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
+
+            DateTime.TryParse(Storage, out _start_time);
+        }
+
+        public void Save() {
+            Storage = _start_time.ToString();
         }
 
         public void Main(string argument, UpdateType updateSource) {
-            if (_counter <= 0) {
+            if (_reinit_counter <= 0) {
                 Reinit();
             }
-            _counter -= 1;
+            _reinit_counter -= 1;
 
             Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
             CollectGridStats(cargoCounts);
             CountCargoTypes(cargoCounts);
             CountProduction(cargoCounts, true);
-            Show(cargoCounts);
+
+            Dictionary<string, string> infos = BuildInfos(cargoCounts);
+
+            EchoScriptInfo(infos);
+            WriteLCDs(infos);
+            BroadcastInfos(infos);
         }
 
         private void Reinit() {
-            _counter = 1000;
+            _reinit_counter = 1000;
 
             _recycle_bin = (IMyCargoContainer)GridTerminalSystem.GetBlockWithName("Recycle Bin");
 
@@ -219,8 +244,8 @@ namespace IngameScript {
             cargoCounts.Add("Production", counts);
         }
 
-        private void Show(Dictionary<string, SortedDictionary<string, MyFixedPoint>> typeCounts) {
-            Dictionary<string, string> outputs = new Dictionary<string, string>();
+        private Dictionary<string, string> BuildInfos(Dictionary<string, SortedDictionary<string, MyFixedPoint>> typeCounts) {
+            Dictionary<string, string> infos = new Dictionary<string, string>();
 
             foreach (KeyValuePair<string, SortedDictionary<string, MyFixedPoint>> subtypeCounts in typeCounts) {
                 string typeId = subtypeCounts.Key.Substring(subtypeCounts.Key.IndexOf("_") + 1);
@@ -230,14 +255,20 @@ namespace IngameScript {
                     s += subtypeCount.Key + ": " + subtypeCount.Value.ToIntSafe() + "\n";
                 }
 
-                outputs.Add(typeId, s);
+                infos.Add(typeId, s);
             }
 
+            return infos;
+        }
+
+        void EchoScriptInfo(Dictionary<string, string> infos) {
             if (!_echoed) {
-                Echo("Cargo Info v1.1\n\nCargo types:\n" + String.Join(", ", outputs.Keys.ToArray()));
+                Echo("Cargo Info v1.1\n\nCargo types:\n" + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
+        }
 
+        void WriteLCDs(Dictionary<string, string> infos, string gridName = "") {
             foreach (IMyTextPanel lcd in _lcds) {
                 if (!lcd.IsFunctional) {
                     continue;
@@ -248,18 +279,42 @@ namespace IngameScript {
                     continue;
                 }
 
+                if (lcdNameParts[1] != gridName) {
+                    continue;
+                }
+
                 string[] targetNames = lcdNameParts[2].Split(',');
                 string content;
                 string s = "";
 
                 foreach (string targetName in targetNames) {
-                    if (outputs.TryGetValue(targetName, out content)) {
+                    if (infos.TryGetValue(targetName, out content)) {
                         s += content + "\n\n";
                     }
                 }
 
                 lcd.WriteText(s);
             }
+        }
+
+        void ReceiveInfos() {
+            List<IMyBroadcastListener> listeners = new List<IMyBroadcastListener>();
+            IGC.GetBroadcastListeners(listeners);
+            foreach (IMyBroadcastListener listener in listeners.Where(l => l.Tag == "cargo info")) {
+                if (listener.HasPendingMessage) {
+                    Message message = (Message)listener.AcceptMessage().Data;
+                    WriteLCDs(message.Infos, message.GridName);
+                }
+            }
+        }
+
+        void BroadcastInfos(Dictionary<string, string> infos) {
+            if (DateTime.Now - _last_broadcast_time < TimeSpan.FromHours(1)) {
+                return;
+            }
+            _last_broadcast_time = DateTime.Now;
+
+            IGC.SendBroadcastMessage("cargo info", new Message(Me.CubeGrid.CustomName, infos));
         }
     }
 }
