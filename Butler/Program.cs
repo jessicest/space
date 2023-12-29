@@ -23,90 +23,97 @@ using VRageMath;
 namespace IngameScript {
     partial class Program : MyGridProgram {
         enum Mode {
-            Ready,
             Cruising,
             Docking,
             Connected,
             Aborted,
         }
 
+        readonly List<IMyBasicMissionBlock> _cruisers;
+        readonly List<IMyPathRecorderBlock> _dockers;
         readonly IMyFlightMovementBlock _fly_fast;
         readonly IMyFlightMovementBlock _fly_safe;
-        readonly IMyBasicMissionBlock _home_cruiser;
-        readonly IMyBasicMissionBlock _away_cruiser;
-        readonly IMyPathRecorderBlock _home_docker;
-        readonly IMyPathRecorderBlock _away_docker;
         readonly ITerminalProperty<bool> _activate_behavior;
         readonly IMyShipConnector _connector;
-        int _counter = 0;
 
+        int _wait_counter;
         Mode _mode;
-        bool _target_away;
+        int _target;
 
         public Program() {
-            string[] data = Storage.Split(',');
-            
+            GridTerminalSystem.GetBlocksOfType(_cruisers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("cruise"));
+            GridTerminalSystem.GetBlocksOfType(_dockers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("dock"));
+
+            List<IMyFlightMovementBlock> movers = new List<IMyFlightMovementBlock>();
+            GridTerminalSystem.GetBlocksOfType(movers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains(": fly fast"));
+            if (movers.Count != 1) {
+                throw new Exception("can't find fly fast");
+            }
+            _fly_fast = movers[0];
+            GridTerminalSystem.GetBlocksOfType(movers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains(": fly safe"));
+            if (movers.Count != 1) {
+                throw new Exception("can't find fly safe");
+            }
+            _fly_safe = movers[0];
+
             _activate_behavior = _fly_fast.GetProperty("ActivateBehavior").AsBool();
 
-            if (data.Length == 3) {
-                bool.TryParse(data[0], out _target_away);
-                Enum.TryParse(data[1], out _mode);
-                int.TryParse(data[2], out _counter);
+            _target = 0;
+            _mode = Mode.Connected;
+            _wait_counter = 0;
 
-                _target_away = true;
+            string[] data = Storage.Split(',');
+
+            if (data.Length == 3) {
+                int.TryParse(data[0], out _target);
+                Enum.TryParse(data[1], out _mode);
+                int.TryParse(data[2], out _wait_counter);
+            } else {
+                Disconnect();
             }
-            Runtime.UpdateFrequency = UpdateFrequency.Once;
         }
 
         public void Save() {
-            Storage = _target_away + "," + _mode + "," + _counter;
+            Storage = _target + "," + _mode + "," + _wait_counter;
         }
 
-        void Cruise(bool targetAway) {
+        void CruiseTo(int target) {
             _activate_behavior.SetValue(_fly_fast, true);
-            _target_away = targetAway;
-            if (targetAway) {
-                _activate_behavior.SetValue(_away_cruiser, true);
-            } else {
-                _activate_behavior.SetValue(_home_cruiser, true);
-            }
+            _target = target;
+            _activate_behavior.SetValue(_cruisers[target], true);
         }
 
-        void StartDocking(bool targetAway) {
+        void StartDocking(int target) {
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
             _connector.Enabled = true;
-            _target_away = targetAway;
+            _target = target;
 
             _activate_behavior.SetValue(_fly_safe, true);
-            if (targetAway) {
-                _activate_behavior.SetValue(_away_docker, true);
-            } else {
-                _activate_behavior.SetValue(_home_docker, true);
-            }
+            _activate_behavior.SetValue(_dockers[target], true);
         }
 
         void TryConnect() {
             if (_connector.Status == MyShipConnectorStatus.Connectable) {
                 _connector.Connect();
-                Runtime.UpdateFrequency = UpdateFrequency.Update100;
                 _activate_behavior.SetValue(_fly_safe, false);
-                _activate_behavior.SetValue(_home_docker, false);
-                _activate_behavior.SetValue(_away_docker, false);
-                _counter = 30;
+                _activate_behavior.SetValue(_dockers[_target], false);
+
+                Runtime.UpdateFrequency = UpdateFrequency.Update100;
+                _wait_counter = 30;
             }
         }
 
         void BeConnected() {
-            _counter -= 1;
-            if (_counter == 0) {
-                _target_away = !_target_away;
+            _wait_counter -= 1;
+            if (_wait_counter == 0) {
                 Disconnect();
             }
         }
 
         void Disconnect() {
             _connector.Enabled = false;
-            Cruise(_target_away);
+            _target = (_target + 1) % _cruisers.Count;
+            CruiseTo(_target);
             Runtime.UpdateFrequency = UpdateFrequency.None;
         }
 
@@ -118,16 +125,12 @@ namespace IngameScript {
         public void Main(string argument, UpdateType updateSource) {
             switch (argument) {
                 case "abort": Abort(); return;
-                case "start docking home": StartDocking(false); return;
-                case "cruise home": Cruise(false); return;
-                case "choose task": Cruise(_target_away); return;
+                case "start docking 0": StartDocking(0); return;
+                case "cruise to 0": CruiseTo(0); return;
+                case "cruise": CruiseTo(_target); return;
             }
 
             switch (_mode) {
-                case Mode.Ready:
-                    _target_away = true;
-                    Disconnect();
-                    break;
                 case Mode.Cruising:
                     break;
                 case Mode.Docking:

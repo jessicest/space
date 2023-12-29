@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Turbine Empire", "Turbine E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cargo View", "..\Cargo View\Cargo View.csproj", "{B090BF2D-D1EB-4D3F-AC20-8182C0F29645}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Butler", "..\Butler\Butler.csproj", "{0F246F5A-3A29-4E34-A2F4-291D974817EC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docky", "..\Butler\Docky.csproj", "{0F246F5A-3A29-4E34-A2F4-291D974817EC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
