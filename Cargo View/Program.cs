@@ -21,7 +21,6 @@ namespace IngameScript {
         private readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
         private readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
-        private IMyCargoContainer _recycle_bin;
         private readonly DateTime _start_time;
         private int _reinit_counter = 0;
         private bool _echoed = false;
@@ -75,8 +74,6 @@ namespace IngameScript {
 
         private void Reinit() {
             _reinit_counter = 1000;
-
-            _recycle_bin = (IMyCargoContainer)GridTerminalSystem.GetBlockWithName("Recycle Bin");
 
             _cargos.Clear();
             GridTerminalSystem.GetBlocksOfType(_cargos,
@@ -202,35 +199,9 @@ namespace IngameScript {
             }
         }
 
-        private bool RecycleSomethingFrom(IMyAssembler assembler) {
-            if (_recycle_bin != null && _recycle_bin.IsWorking) {
-                IMyInventory target = _recycle_bin.GetInventory(0);
-                if (target.VolumeFillFactor <= 0.01f) {
-                    // remove items from any assembler if its queue is clear and its inventory is over 40% full
-                    for (int i = 0; i < assembler.InventoryCount; ++i) {
-                        IMyInventory inventory = assembler.GetInventory(i);
-                        if (inventory.VolumeFillFactor >= 0.4f) {
-                            List<MyInventoryItem> cruft = new List<MyInventoryItem>();
-
-                            inventory.GetItems(cruft);
-                            foreach (MyInventoryItem thing in cruft) {
-                                if (inventory.CanTransferItemTo(target, thing.Type)) {
-                                    inventory.TransferItemTo(target, thing);
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return false;
-        }
-
         private void CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
             SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
-            bool recycledSomething = false;
 
             foreach (IMyAssembler a in _assemblers.Where(a => a.IsWorking)) {
                 a.GetQueue(items);
@@ -244,8 +215,12 @@ namespace IngameScript {
                     }
                 }
 
-                if (clearAssemblers && !recycledSomething && items.Count == 0) {
-                    recycledSomething = RecycleSomethingFrom(a);
+                if (clearAssemblers && a.IsQueueEmpty) {
+                    if (a.Mode == MyAssemblerMode.Assembly && a.InputInventory.CurrentVolume > a.InputInventory.MaxVolume - a.InputInventory.CurrentVolume) {
+                        a.Mode = MyAssemblerMode.Disassembly;
+                    } else if (a.Mode == MyAssemblerMode.Disassembly && a.InputInventory.ItemCount == 0) {
+                        a.Mode = MyAssemblerMode.Assembly;
+                    }
                 }
             }
 
