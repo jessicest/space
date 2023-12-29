@@ -151,14 +151,17 @@ namespace IngameScript {
         private void CompileGridTidbits(Dictionary<string, string> infos) {
             string s = Me.CubeGrid.CustomName + " Stats\n\n";
 
+            // the list below should stay sorted
+
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
+            s += "Assemblers, not producing: " + _assemblers.Where(a => a.IsWorking && !a.IsProducing).Count() + "\n";
+            s += "Assemblers, not queued: " + _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count() + "\n";
             s += "Battery input: " + (100 * CountFullness(_batteries, b => b.CurrentInput, b => b.MaxInput)) + "%\n";
             s += "Battery output: " + (100 * CountFullness(_batteries, b => b.CurrentOutput, b => b.MaxOutput)) + "%\n";
             s += "Battery stored: " + (100 * CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower)) + "%\n";
             s += "Cargo mass: " + ((int)QueryInventories(_cargos, inv => inv.CurrentMass) / 1000) + "t\n";
             s += "Docked ships: " + _connectors.Where(c => c.IsWorking && c.IsConnected).Count() + "\n";
             s += "Hydrogen:" + (100 * CountFullness(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
-            s += "Idle assembers: " + _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count() + "\n";
             s += "Oxygen: " + (100 * CountFullness(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
             s += "Script activity: " + ((DateTime.Now.ToString())) + "\n";
             s += "Script uptime: " + ((DateTime.Now - _start_time).TotalDays) + " days\n";
