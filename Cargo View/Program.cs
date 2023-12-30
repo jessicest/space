@@ -49,7 +49,7 @@ namespace IngameScript {
         }
 
         public Program() {
-            IGC.RegisterBroadcastListener("CargoInfo");
+            //IGC.RegisterBroadcastListener("CargoInfo");
 
             _start_time = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -71,62 +71,53 @@ namespace IngameScript {
             Dictionary<string, MyFixedPoint> componentCounts;
 
             CompileGridTidbits(infos);
-            CompileCargoTypes(infos, out componentCounts);
+            CompileCargoInfos(infos, out componentCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
-            Dictionary<string, MyFixedPoint> productionTargets = CompileProductionTargets();
-            QueueProductionTargets(productionTargets, componentCounts, productionCounts);
+            Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
+            QueueQuotas(quotas, componentCounts, productionCounts);
 
             EchoScriptInfo(infos);
             WriteLCDs(infos);
-            BroadcastInfos(infos);
+            //BroadcastInfos(infos);
         }
 
         private void Reinit() {
             _reinit_counter = 1000;
 
-            _cargos.Clear();
             GridTerminalSystem.GetBlocksOfType(_cargos,
                 block => block.IsSameConstructAs(Me)
                 && block.HasInventory && block.IsWorking);
 
-            _assemblers.Clear();
             GridTerminalSystem.GetBlocksOfType(_assemblers,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
-            _autoAssemblers.Clear();
             GridTerminalSystem.GetBlocksOfType(_autoAssemblers,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking
                 && !block.CooperativeMode
                 && block.CustomName.Contains("Auto"));
 
-            _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
                 block => block.IsSameConstructAs(Me)
-                && block.CustomName.Contains(":CargoInfo:"));
+                && block.CustomName.Contains("CargoInfo:"));
 
-            _oxygen_tanks.Clear();
             GridTerminalSystem.GetBlocksOfType(_oxygen_tanks,
                 block => block.IsSameConstructAs(Me)
                 && block.BlockDefinition.SubtypeName.Contains("Oxygen"));
 
-            _hydrogen_tanks.Clear();
             GridTerminalSystem.GetBlocksOfType(_hydrogen_tanks,
                 block => block.IsSameConstructAs(Me)
                 && block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
 
-            _batteries.Clear();
             GridTerminalSystem.GetBlocksOfType(_batteries,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
-            _turrets.Clear();
             GridTerminalSystem.GetBlocksOfType(_turrets,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
-            _connectors.Clear();
             GridTerminalSystem.GetBlocksOfType(_connectors,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
@@ -167,7 +158,7 @@ namespace IngameScript {
         private void CompileGridTidbits(Dictionary<string, string> infos) {
             string s = Me.CubeGrid.CustomName + " Stats\n\n";
 
-            // the list below should stay sorted
+            // the list below should stay sorted, because all the other screens are sorted
 
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
             s += "Assemblers, not producing: " + _assemblers.Where(a => a.IsWorking && !a.IsProducing).Count() + "\n";
@@ -188,21 +179,22 @@ namespace IngameScript {
             infos.Add("GridTidbits", s);
         }
 
-        Dictionary<string, MyFixedPoint> CompileProductionTargets() {
+        Dictionary<string, MyFixedPoint> CompileQuotas() {
             Dictionary<string, MyFixedPoint> targets = new Dictionary<string, MyFixedPoint>();
-            Regex regex = new Regex(@"^\s*([^:]+): (\d+)\s*$", RegexOptions.Compiled);
+            System.Text.RegularExpressions.Regex regex
+                = new System.Text.RegularExpressions.Regex(@"^\s*([^:]+): (\d+)\s*$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
             foreach (IMyTextPanel lcd in _lcds) {
                 if (!lcd.IsWorking) {
                     continue;
                 }
 
-                if (!lcd.CustomName.Contains("Cargo Targets")) {
+                if (!lcd.CustomName.Contains(":Quota:")) {
                     continue;
                 }
 
                 foreach (string line in lcd.GetText().Split('\n')) {
-                    Match match = regex.Match(line);
+                    System.Text.RegularExpressions.Match match = regex.Match(line);
                     if (match.Success) {
                         string component = match.Groups[1].Value;
                         int quantity;
@@ -214,39 +206,37 @@ namespace IngameScript {
                 }
             }
 
-
             return targets;
         }
 
-        void QueueProductionTargets(Dictionary<string, MyFixedPoint> productionTargets, Dictionary<string, MyFixedPoint> componentCounts, Dictionary<string, MyFixedPoint> productionCounts) {
+        void QueueQuotas(Dictionary<string, MyFixedPoint> quotas, Dictionary<string, MyFixedPoint> componentCounts, Dictionary<string, MyFixedPoint> productionCounts) {
             if (_autoAssemblers.Count == 0) {
                 return;
             }
 
-            foreach (var target in productionTargets) {
-                var amountNeeded = target.Value;
-                if (componentCounts.ContainsKey(target.Key)) {
-                    amountNeeded -= componentCounts[target.Key];
+            foreach (var quota in quotas) {
+                var amountNeeded = quota.Value;
+                if (componentCounts.ContainsKey(quota.Key)) {
+                    amountNeeded -= componentCounts[quota.Key];
                 }
-                if (productionCounts.ContainsKey(target.Key)) {
-                    amountNeeded -= productionCounts[target.Key];
+                if (productionCounts.ContainsKey(quota.Key)) {
+                    amountNeeded -= productionCounts[quota.Key];
                 }
                 if (amountNeeded > 0) {
                     MyDefinitionId id;
-                    if (MyDefinitionId.TryParse("MyObjectBuilder_Component/" + target.Key, out id)) {
+                    if (MyDefinitionId.TryParse("MyObjectBuilder_Component/" + quota.Key, out id)) {
                         _autoAssemblers[0].AddQueueItem(id, amountNeeded);
                     }
                 }
             }
         }
 
-        private void CompileCargoTypes(Dictionary<string, string> infos, out Dictionary<string, MyFixedPoint> components) {
+        private void CompileCargoInfos(Dictionary<string, string> infos, out Dictionary<string, MyFixedPoint> components) {
             Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, Dictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
             foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
                 for (int i = 0; i < cargo.InventoryCount; ++i) {
-                    items.Clear();
                     cargo.GetInventory(i).GetItems(items);
                     foreach (MyInventoryItem item in items) {
                         Dictionary<string, MyFixedPoint> subtypeCounts;
@@ -305,7 +295,8 @@ namespace IngameScript {
         }
 
         void WriteInfos(Dictionary<string, string> infos, string category, Dictionary<string, MyFixedPoint> counts) {
-            List<string> lines = counts.Select(count => count.Key + ": " + count.Value.ToIntSafe() + "\n").ToList();
+            if (category == "Quota") return;
+            List<string> lines = counts.Select(count => count.Key + ": " + count.Value.ToIntSafe()).ToList();
             lines.Sort();
             string s = category + "\n\n" + string.Join("\n", lines);
             infos.Add(category, s);
@@ -313,7 +304,7 @@ namespace IngameScript {
 
         void EchoScriptInfo(Dictionary<string, string> infos) {
             if (!_echoed) {
-                Echo("CargoInfo v" + _version + "features:\n\n1) local cargo display lcd name format is 'CargoInfo::<category>:'\n2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n3) lcd with 'Cargo Targets' will send build orders to an uncooperative assembler with 'Auto' in the name.\n4) Idle half-full assemblers will be flushed.\nCategories: " + String.Join(", ", infos.Keys.ToArray()));
+                Echo("CargoInfo v" + _version + ". features:\n\n1) local cargo display lcd name format is 'CargoInfo::<category>:'\n2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n3) lcd of category 'Quota' will build items in an uncooperative assembler named 'Auto'.\n4) Idle half-full assemblers will be flushed.\nCategories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
         }
@@ -337,10 +328,18 @@ namespace IngameScript {
                 string content;
                 string s = "";
 
+                bool taboo = false;
                 foreach (string targetName in targetNames) {
+                    if (targetName == "Quota") {
+                        taboo = true;
+                        break;
+                    }
                     if (infos.TryGetValue(targetName, out content)) {
                         s += content + "\n\n";
                     }
+                }
+                if (taboo) {
+                    continue;
                 }
 
                 lcd.WriteText(s);
