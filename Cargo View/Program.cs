@@ -68,12 +68,12 @@ namespace IngameScript {
             _reinit_counter -= 1;
 
             Dictionary<string, string> infos = new Dictionary<string, string>();
-            SortedDictionary<string, MyFixedPoint> componentCounts;
+            Dictionary<string, MyFixedPoint> componentCounts;
 
             CompileGridTidbits(infos);
             CompileCargoTypes(infos, out componentCounts);
-            SortedDictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
-            SortedDictionary<string, MyFixedPoint> productionTargets = CompileProductionTargets();
+            Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
+            Dictionary<string, MyFixedPoint> productionTargets = CompileProductionTargets();
             QueueProductionTargets(productionTargets, componentCounts, productionCounts);
 
             EchoScriptInfo(infos);
@@ -188,8 +188,8 @@ namespace IngameScript {
             infos.Add("GridTidbits", s);
         }
 
-        SortedDictionary<string, MyFixedPoint> CompileProductionTargets() {
-            SortedDictionary<string, MyFixedPoint> targets = new SortedDictionary<string, MyFixedPoint>();
+        Dictionary<string, MyFixedPoint> CompileProductionTargets() {
+            Dictionary<string, MyFixedPoint> targets = new Dictionary<string, MyFixedPoint>();
             Regex regex = new Regex(@"^\s*([^:]+): (\d+)\s*$", RegexOptions.Compiled);
 
             foreach (IMyTextPanel lcd in _lcds) {
@@ -218,7 +218,7 @@ namespace IngameScript {
             return targets;
         }
 
-        void QueueProductionTargets(SortedDictionary<string, MyFixedPoint> productionTargets, SortedDictionary<string, MyFixedPoint> componentCounts, SortedDictionary<string, MyFixedPoint> productionCounts) {
+        void QueueProductionTargets(Dictionary<string, MyFixedPoint> productionTargets, Dictionary<string, MyFixedPoint> componentCounts, Dictionary<string, MyFixedPoint> productionCounts) {
             if (_autoAssemblers.Count == 0) {
                 return;
             }
@@ -240,8 +240,8 @@ namespace IngameScript {
             }
         }
 
-        private void CompileCargoTypes(Dictionary<string, string> infos, out SortedDictionary<string, MyFixedPoint> components) {
-            Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
+        private void CompileCargoTypes(Dictionary<string, string> infos, out Dictionary<string, MyFixedPoint> components) {
+            Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, Dictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
             foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
@@ -249,10 +249,10 @@ namespace IngameScript {
                     items.Clear();
                     cargo.GetInventory(i).GetItems(items);
                     foreach (MyInventoryItem item in items) {
-                        SortedDictionary<string, MyFixedPoint> subtypeCounts;
+                        Dictionary<string, MyFixedPoint> subtypeCounts;
                         if (!cargoCounts.TryGetValue(item.Type.TypeId, out subtypeCounts)) {
-                            subtypeCounts = new SortedDictionary<string, MyFixedPoint>();
-                            cargoCounts.Add(item.Type.TypeId, new SortedDictionary<string, MyFixedPoint>());
+                            subtypeCounts = new Dictionary<string, MyFixedPoint>();
+                            cargoCounts.Add(item.Type.TypeId, new Dictionary<string, MyFixedPoint>());
                         }
 
                         if (!subtypeCounts.ContainsKey(item.Type.SubtypeId)) {
@@ -264,8 +264,8 @@ namespace IngameScript {
                 }
             }
 
-            components = new SortedDictionary<string, MyFixedPoint>();
-            foreach (KeyValuePair<string, SortedDictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
+            components = new Dictionary<string, MyFixedPoint>();
+            foreach (KeyValuePair<string, Dictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
                 string category = categoryCounts.Key.Substring(categoryCounts.Key.IndexOf("_") + 1);
                 if (category == "Component") {
                     components = categoryCounts.Value;
@@ -275,8 +275,8 @@ namespace IngameScript {
 
         }
 
-        private SortedDictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
-            SortedDictionary<string, MyFixedPoint> queue = new SortedDictionary<string, MyFixedPoint>();
+        private Dictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
+            Dictionary<string, MyFixedPoint> queue = new Dictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
 
             foreach (IMyAssembler a in _assemblers.Where(a => a.IsWorking)) {
@@ -304,13 +304,10 @@ namespace IngameScript {
             return queue;
         }
 
-        void WriteInfos(Dictionary<string, string> infos, string category, SortedDictionary<string, MyFixedPoint> counts) {
-            string s = category + "\n\n";
-
-            foreach (KeyValuePair<string, MyFixedPoint> subtypeCount in counts) {
-                s += subtypeCount.Key + ": " + subtypeCount.Value.ToIntSafe() + "\n";
-            }
-
+        void WriteInfos(Dictionary<string, string> infos, string category, Dictionary<string, MyFixedPoint> counts) {
+            List<string> lines = counts.Select(count => count.Key + ": " + count.Value.ToIntSafe() + "\n").ToList();
+            lines.Sort();
+            string s = category + "\n\n" + string.Join("\n", lines);
             infos.Add(category, s);
         }
 
