@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Gui;
 using Sandbox.ModAPI.Ingame;
 using VRage;
+using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
 using VRage.Library;
 using VRageRender;
@@ -16,6 +20,7 @@ namespace IngameScript {
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
+        private readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
         private readonly List<IMyGasTank> _oxygen_tanks= new List<IMyGasTank>();
         private readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
         private readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
@@ -63,9 +68,13 @@ namespace IngameScript {
             _reinit_counter -= 1;
 
             Dictionary<string, string> infos = new Dictionary<string, string>();
+            SortedDictionary<string, MyFixedPoint> componentCounts;
+
             CompileGridTidbits(infos);
-            CompileCargoTypes(infos);
-            CompileProductionInfos(infos, true);
+            CompileCargoTypes(infos, out componentCounts);
+            SortedDictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
+            SortedDictionary<string, MyFixedPoint> productionTargets = CompileProductionTargets();
+            QueueProductionTargets(productionTargets, componentCounts, productionCounts);
 
             EchoScriptInfo(infos);
             WriteLCDs(infos);
@@ -84,6 +93,13 @@ namespace IngameScript {
             GridTerminalSystem.GetBlocksOfType(_assemblers,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
+
+            _autoAssemblers.Clear();
+            GridTerminalSystem.GetBlocksOfType(_autoAssemblers,
+                block => block.IsSameConstructAs(Me)
+                && block.IsWorking
+                && !block.CooperativeMode
+                && block.CustomName.Contains("Auto"));
 
             _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
@@ -172,7 +188,59 @@ namespace IngameScript {
             infos.Add("GridTidbits", s);
         }
 
-        private void CompileCargoTypes(Dictionary<string, string> infos) {
+        SortedDictionary<string, MyFixedPoint> CompileProductionTargets() {
+            SortedDictionary<string, MyFixedPoint> targets = new SortedDictionary<string, MyFixedPoint>();
+            Regex regex = new Regex(@"^\s*([^:]+): (\d+)\s*$", RegexOptions.Compiled);
+
+            foreach (IMyTextPanel lcd in _lcds) {
+                if (!lcd.IsWorking) {
+                    continue;
+                }
+
+                if (!lcd.CustomName.Contains("Cargo Targets")) {
+                    continue;
+                }
+
+                foreach (string line in lcd.GetText().Split('\n')) {
+                    Match match = regex.Match(line);
+                    if (match.Success) {
+                        string component = match.Groups[1].Value;
+                        int quantity;
+                        if (!int.TryParse(match.Groups[2].Value, out quantity)) {
+                            continue;
+                        }
+                        targets.Add(component, (MyFixedPoint)quantity);
+                    }
+                }
+            }
+
+
+            return targets;
+        }
+
+        void QueueProductionTargets(SortedDictionary<string, MyFixedPoint> productionTargets, SortedDictionary<string, MyFixedPoint> componentCounts, SortedDictionary<string, MyFixedPoint> productionCounts) {
+            if (_autoAssemblers.Count == 0) {
+                return;
+            }
+
+            foreach (var target in productionTargets) {
+                var amountNeeded = target.Value;
+                if (componentCounts.ContainsKey(target.Key)) {
+                    amountNeeded -= componentCounts[target.Key];
+                }
+                if (productionCounts.ContainsKey(target.Key)) {
+                    amountNeeded -= productionCounts[target.Key];
+                }
+                if (amountNeeded > 0) {
+                    MyDefinitionId id;
+                    if (MyDefinitionId.TryParse("MyObjectBuilder_Component/" + target.Key, out id)) {
+                        _autoAssemblers[0].AddQueueItem(id, amountNeeded);
+                    }
+                }
+            }
+        }
+
+        private void CompileCargoTypes(Dictionary<string, string> infos, out SortedDictionary<string, MyFixedPoint> components) {
             Dictionary<string, SortedDictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, SortedDictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
@@ -196,14 +264,19 @@ namespace IngameScript {
                 }
             }
 
+            components = new SortedDictionary<string, MyFixedPoint>();
             foreach (KeyValuePair<string, SortedDictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
                 string category = categoryCounts.Key.Substring(categoryCounts.Key.IndexOf("_") + 1);
+                if (category == "Component") {
+                    components = categoryCounts.Value;
+                }
                 WriteInfos(infos, category, categoryCounts.Value);
             }
+
         }
 
-        private void CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
-            SortedDictionary<string, MyFixedPoint> counts = new SortedDictionary<string, MyFixedPoint>();
+        private SortedDictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
+            SortedDictionary<string, MyFixedPoint> queue = new SortedDictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
 
             foreach (IMyAssembler a in _assemblers.Where(a => a.IsWorking)) {
@@ -211,10 +284,10 @@ namespace IngameScript {
 
                 foreach (MyProductionItem item in items) {
                     string id = item.BlueprintId.SubtypeName;
-                    if (!counts.ContainsKey(id)) {
-                        counts.Add(id, item.Amount);
+                    if (!queue.ContainsKey(id)) {
+                        queue.Add(id, item.Amount);
                     } else {
-                        counts[id] += item.Amount;
+                        queue[id] += item.Amount;
                     }
                 }
 
@@ -227,7 +300,8 @@ namespace IngameScript {
                 }
             }
 
-            WriteInfos(infos, "Production", counts);
+            WriteInfos(infos, "Production", queue);
+            return queue;
         }
 
         void WriteInfos(Dictionary<string, string> infos, string category, SortedDictionary<string, MyFixedPoint> counts) {
@@ -249,7 +323,7 @@ namespace IngameScript {
 
         void WriteLCDs(Dictionary<string, string> infos, string gridName = "") {
             foreach (IMyTextPanel lcd in _lcds) {
-                if (!lcd.IsFunctional) {
+                if (!lcd.IsWorking) {
                     continue;
                 }
 
