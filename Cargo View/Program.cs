@@ -224,7 +224,7 @@ namespace IngameScript {
                 }
                 if (amountNeeded > 0) {
                     MyDefinitionId id;
-                    if (MyDefinitionId.TryParse("MyObjectBuilder_Component/" + quota.Key, out id)) {
+                    if (MyDefinitionId.TryParse("MyObjectBuilder_BlueprintDefinition/" + quota.Key, out id)) {
                         _autoAssemblers[0].AddQueueItem(id, amountNeeded);
                     }
                 }
