@@ -68,13 +68,13 @@ namespace IngameScript {
             _reinit_counter -= 1;
 
             Dictionary<string, string> infos = new Dictionary<string, string>();
-            Dictionary<string, MyFixedPoint> componentCounts;
+            Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
 
             CompileGridTidbits(infos);
-            CompileCargoInfos(infos, out componentCounts);
+            CompileCargoInfos(infos, out cargoCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
             Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
-            QueueQuotas(quotas, componentCounts, productionCounts);
+            QueueQuotas(quotas, cargoCounts, productionCounts);
 
             EchoScriptInfo(infos);
             WriteLCDs(infos);
@@ -84,40 +84,49 @@ namespace IngameScript {
         private void Reinit() {
             _reinit_counter = 1000;
 
+            _cargos.Clear();
             GridTerminalSystem.GetBlocksOfType(_cargos,
                 block => block.IsSameConstructAs(Me)
                 && block.HasInventory && block.IsWorking);
 
+            _assemblers.Clear();
             GridTerminalSystem.GetBlocksOfType(_assemblers,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
+            _autoAssemblers.Clear();
             GridTerminalSystem.GetBlocksOfType(_autoAssemblers,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking
                 && !block.CooperativeMode
                 && block.CustomName.Contains("Auto"));
 
+            _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
                 block => block.IsSameConstructAs(Me)
                 && block.CustomName.Contains("CargoInfo:"));
 
+            _oxygen_tanks.Clear();
             GridTerminalSystem.GetBlocksOfType(_oxygen_tanks,
                 block => block.IsSameConstructAs(Me)
                 && block.BlockDefinition.SubtypeName.Contains("Oxygen"));
 
+            _hydrogen_tanks.Clear();
             GridTerminalSystem.GetBlocksOfType(_hydrogen_tanks,
                 block => block.IsSameConstructAs(Me)
                 && block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
 
+            _batteries.Clear();
             GridTerminalSystem.GetBlocksOfType(_batteries,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
+            _turrets.Clear();
             GridTerminalSystem.GetBlocksOfType(_turrets,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
 
+            _connectors.Clear();
             GridTerminalSystem.GetBlocksOfType(_connectors,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
@@ -156,7 +165,7 @@ namespace IngameScript {
         }
 
         private void CompileGridTidbits(Dictionary<string, string> infos) {
-            string s = Me.CubeGrid.CustomName + " Stats\n\n";
+            string s = Me.CubeGrid.CustomName + " Tidbits\n\n";
 
             // the list below should stay sorted, because all the other screens are sorted
 
@@ -209,15 +218,21 @@ namespace IngameScript {
             return targets;
         }
 
-        void QueueQuotas(Dictionary<string, MyFixedPoint> quotas, Dictionary<string, MyFixedPoint> componentCounts, Dictionary<string, MyFixedPoint> productionCounts) {
+        void QueueQuotas(
+            Dictionary<string, MyFixedPoint> quotas,
+            Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts,
+            Dictionary<string, MyFixedPoint> productionCounts) {
+
             if (_autoAssemblers.Count == 0) {
                 return;
             }
 
             foreach (var quota in quotas) {
                 var amountNeeded = quota.Value;
-                if (componentCounts.ContainsKey(quota.Key)) {
-                    amountNeeded -= componentCounts[quota.Key];
+                foreach (var counts in cargoCounts.Values) {
+                    if (counts.ContainsKey(quota.Key)) {
+                        amountNeeded -= counts[quota.Key];
+                    }
                 }
                 if (productionCounts.ContainsKey(quota.Key)) {
                     amountNeeded -= productionCounts[quota.Key];
@@ -225,18 +240,23 @@ namespace IngameScript {
                 if (amountNeeded > 0) {
                     MyDefinitionId id;
                     if (MyDefinitionId.TryParse("MyObjectBuilder_BlueprintDefinition/" + quota.Key, out id)) {
-                        _autoAssemblers[0].AddQueueItem(id, amountNeeded);
+                        try {
+                            _autoAssemblers[0].AddQueueItem(id, amountNeeded);
+                        } catch (Exception) {
+                            Echo("can't queue " + quota.Key + ": " + id);
+                        }
                     }
                 }
             }
         }
 
-        private void CompileCargoInfos(Dictionary<string, string> infos, out Dictionary<string, MyFixedPoint> components) {
-            Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts = new Dictionary<string, Dictionary<string, MyFixedPoint>>();
+        private void CompileCargoInfos(Dictionary<string, string> infos, out Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts) {
+            cargoCounts = new Dictionary<string, Dictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
             foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
                 for (int i = 0; i < cargo.InventoryCount; ++i) {
+                    items.Clear();
                     cargo.GetInventory(i).GetItems(items);
                     foreach (MyInventoryItem item in items) {
                         Dictionary<string, MyFixedPoint> subtypeCounts;
@@ -254,18 +274,13 @@ namespace IngameScript {
                 }
             }
 
-            components = new Dictionary<string, MyFixedPoint>();
             foreach (KeyValuePair<string, Dictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
                 string category = categoryCounts.Key.Substring(categoryCounts.Key.IndexOf("_") + 1);
-                if (category == "Component") {
-                    components = categoryCounts.Value;
-                }
                 WriteInfos(infos, category, categoryCounts.Value);
             }
-
         }
 
-        private Dictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = true) {
+        private Dictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = false) {
             Dictionary<string, MyFixedPoint> queue = new Dictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
 
@@ -280,6 +295,7 @@ namespace IngameScript {
                         queue[id] += item.Amount;
                     }
                 }
+                items.Clear();
 
                 if (clearAssemblers && a.IsQueueEmpty) {
                     if (a.Mode == MyAssemblerMode.Assembly && a.InputInventory.CurrentVolume > a.InputInventory.MaxVolume - a.InputInventory.CurrentVolume) {
