@@ -49,7 +49,7 @@ namespace IngameScript {
         }
 
         public Program() {
-            IGC.RegisterBroadcastListener("cargo info");
+            IGC.RegisterBroadcastListener("CargoInfo");
 
             _start_time = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -104,7 +104,7 @@ namespace IngameScript {
             _lcds.Clear();
             GridTerminalSystem.GetBlocksOfType(_lcds,
                 block => block.IsSameConstructAs(Me)
-                && block.CustomName.StartsWith("Cargo Info:"));
+                && block.CustomName.Contains(":CargoInfo:"));
 
             _oxygen_tanks.Clear();
             GridTerminalSystem.GetBlocksOfType(_oxygen_tanks,
@@ -313,7 +313,7 @@ namespace IngameScript {
 
         void EchoScriptInfo(Dictionary<string, string> infos) {
             if (!_echoed) {
-                Echo("Cargo Info v" + _version + "\n\nCargo types:\n" + String.Join(", ", infos.Keys.ToArray()));
+                Echo("CargoInfo v" + _version + "features:\n\n1) local cargo display lcd name format is 'CargoInfo::<category>:'\n2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n3) lcd with 'Cargo Targets' will send build orders to an uncooperative assembler with 'Auto' in the name.\n4) Idle half-full assemblers will be flushed.\nCategories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
         }
@@ -350,7 +350,7 @@ namespace IngameScript {
         void ReceiveInfos() {
             List<IMyBroadcastListener> listeners = new List<IMyBroadcastListener>();
             IGC.GetBroadcastListeners(listeners);
-            foreach (IMyBroadcastListener listener in listeners.Where(l => l.Tag == "cargo info")) {
+            foreach (IMyBroadcastListener listener in listeners.Where(l => l.Tag == "CargoInfo")) {
                 if (listener.HasPendingMessage) {
                     Message message = (Message)listener.AcceptMessage().Data;
                     WriteLCDs(message.Infos, message.GridName);
@@ -359,7 +359,7 @@ namespace IngameScript {
         }
 
         void BroadcastInfos(Dictionary<string, string> infos) {
-            IGC.SendBroadcastMessage("cargo info", new Message(Me.CubeGrid.CustomName, infos));
+            IGC.SendBroadcastMessage("CargoInfo", new Message(Me.CubeGrid.CustomName, infos));
         }
     }
 }
