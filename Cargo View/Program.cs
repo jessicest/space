@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -30,16 +31,6 @@ namespace IngameScript {
         private int _reinit_counter = 0;
         private bool _echoed = false;
 
-        struct Message {
-            public string GridName;
-            public Dictionary<string, string> Infos;
-
-            public Message(string customName, Dictionary<string, string> infos) {
-                this.GridName = customName;
-                this.Infos = infos;
-            }
-        }
-
         private IMyTerminalBlock LoadBlock(string name) {
             var block = GridTerminalSystem.GetBlockWithName(name);
             if (block == null) {
@@ -49,7 +40,7 @@ namespace IngameScript {
         }
 
         public Program() {
-            //IGC.RegisterBroadcastListener("CargoInfo");
+            IGC.RegisterBroadcastListener("CargoInfo");
 
             _start_time = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -76,9 +67,10 @@ namespace IngameScript {
             Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
             QueueQuotas(quotas, cargoCounts, productionCounts);
 
-            EchoScriptInfo(infos);
-            WriteLCDs(infos);
-            //BroadcastInfos(infos);
+            ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
+            EchoScriptInfo(bakedInfos);
+            WriteLCDs(bakedInfos);
+            BroadcastInfos(bakedInfos);
         }
 
         private void Reinit() {
@@ -319,14 +311,14 @@ namespace IngameScript {
             infos.Add(category, s);
         }
 
-        void EchoScriptInfo(Dictionary<string, string> infos) {
+        void EchoScriptInfo(ImmutableDictionary<string, string> infos) {
             if (!_echoed) {
                 Echo("CargoInfo v" + _version + ". features:\n\n1) local cargo display lcd name format is 'CargoInfo::<category>:'\n2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n3) lcd of category 'Quota' will build items in an uncooperative assembler named 'Auto'.\n4) Idle half-full assemblers will be flushed.\nCategories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
         }
 
-        void WriteLCDs(Dictionary<string, string> infos, string gridName = "") {
+        void WriteLCDs(ImmutableDictionary<string, string> infos, string gridName = "") {
             foreach (IMyTextPanel lcd in _lcds) {
                 if (!lcd.IsWorking) {
                     continue;
@@ -368,14 +360,14 @@ namespace IngameScript {
             IGC.GetBroadcastListeners(listeners);
             foreach (IMyBroadcastListener listener in listeners.Where(l => l.Tag == "CargoInfo")) {
                 if (listener.HasPendingMessage) {
-                    Message message = (Message)listener.AcceptMessage().Data;
-                    WriteLCDs(message.Infos, message.GridName);
+                    MyTuple<string, ImmutableDictionary<string, string>> message = (MyTuple<string, ImmutableDictionary<string, string>>)listener.AcceptMessage().Data;
+                    WriteLCDs(message.Item2, message.Item1);
                 }
             }
         }
 
-        void BroadcastInfos(Dictionary<string, string> infos) {
-            IGC.SendBroadcastMessage("CargoInfo", new Message(Me.CubeGrid.CustomName, infos));
+        void BroadcastInfos(ImmutableDictionary<string, string> infos) {
+            IGC.SendBroadcastMessage("CargoInfo", MyTuple.Create(Me.CubeGrid.CustomName, infos));
         }
     }
 }
