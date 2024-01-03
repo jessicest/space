@@ -17,7 +17,7 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
-        private const string _version = "1.1";
+        private const string _version = "1.2";
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
