@@ -31,10 +31,14 @@ namespace IngameScript {
 
         readonly List<IMyBasicMissionBlock> _cruisers;
         readonly List<IMyPathRecorderBlock> _dockers;
+        readonly List<IMyOffensiveCombatBlock> _offensives;
         readonly IMyFlightMovementBlock _fly_fast;
         readonly IMyFlightMovementBlock _fly_safe;
         readonly ITerminalProperty<bool> _activate_behavior;
         readonly IMyShipConnector _connector;
+        readonly List<IMyTerminalBlock> _terminals;
+        readonly List<IMyBatteryBlock> _batteries;
+        readonly List<IMyGasTank> _hydrogen_tanks;
 
         int _wait_counter;
         Mode _mode;
@@ -43,6 +47,10 @@ namespace IngameScript {
         public Program() {
             GridTerminalSystem.GetBlocksOfType(_cruisers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("cruise"));
             GridTerminalSystem.GetBlocksOfType(_dockers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("dock"));
+            GridTerminalSystem.GetBlocksOfType(_offensives, b => b.IsSameConstructAs(Me));
+            GridTerminalSystem.GetBlocksOfType(_batteries, b => b.IsSameConstructAs(Me));
+            GridTerminalSystem.GetBlocksOfType(_terminals, b => b.IsSameConstructAs(Me));
+            GridTerminalSystem.GetBlocksOfType(_hydrogen_tanks, b => b.IsSameConstructAs(Me) && b.BlockDefinition.SubtypeName.Contains("Hydrogen"));
 
             List<IMyFlightMovementBlock> movers = new List<IMyFlightMovementBlock>();
             GridTerminalSystem.GetBlocksOfType(movers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains(": fly fast"));
@@ -77,19 +85,64 @@ namespace IngameScript {
             Storage = _target + "," + _mode + "," + _wait_counter;
         }
 
+        float? CountFullness<T>(List<T> blocks, Func<T, double> getCurrent, Func<T, double> getMax) where T : IMyTerminalBlock {
+            return CountFullness(blocks, a => (float)getCurrent(a), a => (float)getMax(a));
+        }
+
+        float? CountFullness<T>(List<T> blocks, Func<T, float> getCurrent, Func<T, float> getMax) where T : IMyTerminalBlock {
+            float current = 0;
+            float max = 0;
+
+            foreach (T b in blocks.Where(b => b.IsWorking)) {
+                current += getCurrent(b);
+                max += getMax(b);
+            }
+
+            if (max > 0) {
+                return (current / max);
+            } else {
+                return null;
+            }
+        }
+
+        float QueryInventories(IEnumerable<IMyTerminalBlock> blocks, Func<IMyInventory, float> f) {
+            float result = 0;
+
+            foreach (IMyTerminalBlock block in blocks.Where(b => b.IsWorking)) {
+                for (int i = 0; i < block.InventoryCount; ++i) {
+                    result += (float)f(block.GetInventory(i));
+                }
+            }
+
+            return result;
+        }
+
+        float QueryItems(IEnumerable<IMyTerminalBlock> blocks, Func<MyInventoryItem, float> f, Func<MyInventoryItem, bool> filter = null) {
+            return QueryInventories(blocks, inv => {
+                List<MyInventoryItem> items = new List<MyInventoryItem>();
+                inv.GetItems(items, filter);
+                return items.Select(f).Sum();
+            });
+        }
+
         void CruiseTo(int target) {
-            _activate_behavior.SetValue(_fly_fast, true);
             _target = target;
+            _activate_behavior.SetValue(_fly_fast, true);
             _activate_behavior.SetValue(_cruisers[target], true);
+            Runtime.UpdateFrequency = UpdateFrequency.Update100;
         }
 
         void StartDocking(int target) {
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;
-            _connector.Enabled = true;
             _target = target;
+            _connector.Enabled = true;
 
+            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
+                _activate_behavior.SetValue(o, false);
+            }
             _activate_behavior.SetValue(_fly_safe, true);
             _activate_behavior.SetValue(_dockers[target], true);
+
+            Runtime.UpdateFrequency = UpdateFrequency.Update10;
         }
 
         void TryConnect() {
@@ -98,14 +151,33 @@ namespace IngameScript {
                 _activate_behavior.SetValue(_fly_safe, false);
                 _activate_behavior.SetValue(_dockers[_target], false);
 
-                Runtime.UpdateFrequency = UpdateFrequency.Update100;
                 _wait_counter = 30;
+                Runtime.UpdateFrequency = UpdateFrequency.Update100;
+            }
+        }
+
+        void BeCruising() {
+            if (_target == 0) {
+                return;
+            }
+            if ((CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower) ?? 1.0f) < 0.1f) {
+                Echo("low battery! going home");
+                CruiseTo(0);
+            } else if ((CountFullness(_hydrogen_tanks, t => t.FilledRatio * t.Capacity, t => t.Capacity) ?? 1.0f) < 0.1f) {
+                Echo("low hydrogen! going home");
+                CruiseTo(0);
+            } else if (_offensives.Count > 0 && QueryItems(_terminals, i => (float)i.Amount, i => i.Type.TypeId == "AmmoMagazine") <= 0.0f) {
+                Echo("low ammo! going home");
+                foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
+                    _activate_behavior.SetValue(o, false);
+                }
+                CruiseTo(0);
             }
         }
 
         void BeConnected() {
             _wait_counter -= 1;
-            if (_wait_counter == 0) {
+            if (_wait_counter <= 0) {
                 Disconnect();
             }
         }
@@ -113,8 +185,10 @@ namespace IngameScript {
         void Disconnect() {
             _connector.Enabled = false;
             _target = (_target + 1) % _cruisers.Count;
+            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
+                _activate_behavior.SetValue(o, true);
+            }
             CruiseTo(_target);
-            Runtime.UpdateFrequency = UpdateFrequency.None;
         }
 
         void Abort() {
@@ -127,11 +201,13 @@ namespace IngameScript {
                 case "abort": Abort(); return;
                 case "start docking 0": StartDocking(0); return;
                 case "cruise to 0": CruiseTo(0); return;
+                case "cruise to 1": CruiseTo(1); return;
                 case "cruise": CruiseTo(_target); return;
             }
 
             switch (_mode) {
                 case Mode.Cruising:
+                    BeCruising();
                     break;
                 case Mode.Docking:
                     TryConnect();
