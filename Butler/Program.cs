@@ -29,20 +29,33 @@ namespace IngameScript {
             Aborted,
         }
 
-        readonly List<IMyBasicMissionBlock> _cruisers;
-        readonly List<IMyPathRecorderBlock> _dockers;
-        readonly List<IMyOffensiveCombatBlock> _offensives;
+        readonly List<IMyBasicMissionBlock> _cruisers = new List<IMyBasicMissionBlock>();
+        readonly List<IMyPathRecorderBlock> _dockers = new List<IMyPathRecorderBlock>();
+        readonly List<IMyOffensiveCombatBlock> _offensives = new List<IMyOffensiveCombatBlock>();
         readonly IMyFlightMovementBlock _fly_fast;
         readonly IMyFlightMovementBlock _fly_safe;
-        readonly ITerminalProperty<bool> _activate_behavior;
+        readonly ITerminalProperty<bool> _activate_mission;
+        readonly ITerminalProperty<bool> _activate_recorder;
+        readonly ITerminalProperty<bool> _activate_combat;
+        readonly ITerminalProperty<bool> _activate_mover;
         readonly IMyShipConnector _connector;
-        readonly List<IMyTerminalBlock> _terminals;
-        readonly List<IMyBatteryBlock> _batteries;
-        readonly List<IMyGasTank> _hydrogen_tanks;
+        readonly List<IMyTerminalBlock> _terminals = new List<IMyTerminalBlock>();
+        readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
+        readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
 
         int _wait_counter;
         Mode _mode;
         int _target;
+
+        private ITerminalProperty<bool> getActivateCommand<T>(List<T> list) where T: class, IMyTerminalBlock {
+            List<T> blocks = new List<T>();
+            GridTerminalSystem.GetBlocksOfType(blocks, b => b.IsSameConstructAs(Me));
+            if (blocks.Count > 0) {
+                return blocks[0].GetProperty("ActivateBehavior").AsBool();
+            } else {
+                return null;
+            }
+        }
 
         public Program() {
             GridTerminalSystem.GetBlocksOfType(_cruisers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("cruise"));
@@ -51,6 +64,9 @@ namespace IngameScript {
             GridTerminalSystem.GetBlocksOfType(_batteries, b => b.IsSameConstructAs(Me));
             GridTerminalSystem.GetBlocksOfType(_terminals, b => b.IsSameConstructAs(Me));
             GridTerminalSystem.GetBlocksOfType(_hydrogen_tanks, b => b.IsSameConstructAs(Me) && b.BlockDefinition.SubtypeName.Contains("Hydrogen"));
+
+            _cruisers.SortNoAlloc((a, b) => Comparer<string>.Default.Compare(a.CustomName, b.CustomName));
+            _dockers.SortNoAlloc((a, b) => Comparer<string>.Default.Compare(a.CustomName, b.CustomName));
 
             List<IMyFlightMovementBlock> movers = new List<IMyFlightMovementBlock>();
             GridTerminalSystem.GetBlocksOfType(movers, b => b.IsSameConstructAs(Me) && b.CustomName.Contains(": fly fast"));
@@ -64,7 +80,17 @@ namespace IngameScript {
             }
             _fly_safe = movers[0];
 
-            _activate_behavior = _fly_fast.GetProperty("ActivateBehavior").AsBool();
+            List<IMyShipConnector> connectors = new List<IMyShipConnector>();
+            GridTerminalSystem.GetBlocksOfType(connectors, b => b.IsSameConstructAs(Me));
+            if (connectors.Count != 1) {
+                throw new Exception("can't find my connector");
+            }
+            _connector = connectors[0];
+
+            _activate_mover = _fly_fast.GetProperty("ActivateBehavior").AsBool();
+            _activate_mission = getActivateCommand(_cruisers);
+            _activate_combat = getActivateCommand(_offensives);
+            _activate_recorder = getActivateCommand(_dockers);
 
             _target = 0;
             _mode = Mode.Connected;
@@ -127,8 +153,8 @@ namespace IngameScript {
 
         void CruiseTo(int target) {
             _target = target;
-            _activate_behavior.SetValue(_fly_fast, true);
-            _activate_behavior.SetValue(_cruisers[target], true);
+            _activate_mover.SetValue(_fly_fast, true);
+            _activate_mission.SetValue(_cruisers[target], true);
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
         }
 
@@ -137,10 +163,10 @@ namespace IngameScript {
             _connector.Enabled = true;
 
             foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                _activate_behavior.SetValue(o, false);
+                _activate_combat.SetValue(o, false);
             }
-            _activate_behavior.SetValue(_fly_safe, true);
-            _activate_behavior.SetValue(_dockers[target], true);
+            _activate_mover.SetValue(_fly_safe, true);
+            _activate_recorder.SetValue(_dockers[target], true);
 
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
         }
@@ -148,8 +174,8 @@ namespace IngameScript {
         void TryConnect() {
             if (_connector.Status == MyShipConnectorStatus.Connectable) {
                 _connector.Connect();
-                _activate_behavior.SetValue(_fly_safe, false);
-                _activate_behavior.SetValue(_dockers[_target], false);
+                _activate_mover.SetValue(_fly_safe, false);
+                _activate_recorder.SetValue(_dockers[_target], false);
 
                 _wait_counter = 30;
                 Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -169,7 +195,7 @@ namespace IngameScript {
             } else if (_offensives.Count > 0 && QueryItems(_terminals, i => (float)i.Amount, i => i.Type.TypeId == "AmmoMagazine") <= 0.0f) {
                 Echo("low ammo! going home");
                 foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                    _activate_behavior.SetValue(o, false);
+                    _activate_combat.SetValue(o, false);
                 }
                 CruiseTo(0);
             }
@@ -186,7 +212,7 @@ namespace IngameScript {
             _connector.Enabled = false;
             _target = (_target + 1) % _cruisers.Count;
             foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                _activate_behavior.SetValue(o, true);
+                _activate_combat.SetValue(o, true);
             }
             CruiseTo(_target);
         }
