@@ -27,8 +27,10 @@ namespace IngameScript {
         private readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
         private readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
+        private readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
+        private readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
         private readonly DateTime _start_time;
         private int _reinit_counter = 0;
         private bool _echoed = false;
@@ -74,6 +76,7 @@ namespace IngameScript {
             Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
 
             CompileGridTidbits(infos);
+            CompileWeaponInfos(infos);
 
             CompileCargoInfos(infos, out cargoCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
@@ -106,7 +109,9 @@ namespace IngameScript {
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
             LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
+            LoadBlocks(_tools);
             LoadBlocks(_turrets);
+            LoadBlocks(_weapons);
             LoadBlocks(_vents);
         }
 
@@ -166,6 +171,53 @@ namespace IngameScript {
             s += "Turrets, targeting: " + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
 
             infos.Add("GridTidbits", s);
+        }
+
+        private void CompileWeaponInfos(Dictionary<string, string> infos) {
+            List<string> lines = new List<string>();
+            
+            foreach (IMyShipToolBase tool in _tools) {
+                IMySlimBlock slim = tool.CubeGrid.GetCubeBlock(tool.Position);
+
+                string s = tool.CustomName + ": ";
+                if (slim.IsDestroyed) {
+                    s += "destroyed";
+                } else {
+                    s += (int)(slim.DamageRatio * 100.0f) + "% HP, ";
+
+                    if (tool.IsFunctional) {
+                        s += Ratio(Inventories(tool), inv => inv.CurrentVolume, inv => inv.MaxVolume, true) + "% bags";
+                        if (tool.IsActivated) {
+                            s += " >>";
+                        }
+                    } else {
+                        s += "nonfunctional";
+                    }
+                }
+            }
+
+            foreach (IMyUserControllableGun weapon in _weapons) {
+                IMySlimBlock slim = weapon.CubeGrid.GetCubeBlock(weapon.Position);
+
+                string s = weapon.CustomName + ": ";
+                if (slim.IsDestroyed) {
+                    s += "destroyed";
+                } else {
+                    s += (int)(slim.DamageRatio * 100.0f) + "% HP, ";
+
+                    if (weapon.IsFunctional) {
+                        s += Ratio(Inventories(weapon), inv => inv.CurrentVolume, inv => inv.MaxVolume, true) + "% bags";
+                        if (weapon.IsShooting) {
+                            s += " >>";
+                        }
+                    } else {
+                        s += "nonfunctional";
+                    }
+                }
+            }
+
+            lines.Sort();
+            infos.Add("Weapons", "Weapons\n\n" + string.Join("\n", lines));
         }
 
         private void CompileOxygenInfos(Dictionary<string, string> infos) {
