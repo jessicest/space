@@ -36,7 +36,6 @@ namespace IngameScript {
         readonly IMyFlightMovementBlock _fly_safe;
         readonly ITerminalProperty<bool> _activate_mission;
         readonly ITerminalProperty<bool> _activate_recorder;
-        readonly ITerminalProperty<bool> _activate_combat;
         readonly ITerminalProperty<bool> _activate_mover;
         readonly IMyShipConnector _connector;
         readonly List<IMyTerminalBlock> _terminals = new List<IMyTerminalBlock>();
@@ -89,7 +88,6 @@ namespace IngameScript {
 
             _activate_mover = _fly_fast.GetProperty("ActivateBehavior").AsBool();
             _activate_mission = getActivateCommand(_cruisers);
-            _activate_combat = getActivateCommand(_offensives);
             _activate_recorder = getActivateCommand(_dockers);
 
             _target = 0;
@@ -134,7 +132,7 @@ namespace IngameScript {
         float QueryInventories(IEnumerable<IMyTerminalBlock> blocks, Func<IMyInventory, float> f) {
             float result = 0;
 
-            foreach (IMyTerminalBlock block in blocks.Where(b => b.IsWorking)) {
+            foreach (IMyTerminalBlock block in blocks.Where(b => b.IsFunctional)) {
                 for (int i = 0; i < block.InventoryCount; ++i) {
                     result += (float)f(block.GetInventory(i));
                 }
@@ -153,6 +151,7 @@ namespace IngameScript {
 
         void CruiseTo(int target) {
             _target = target;
+            _mode = Mode.Cruising;
             _activate_mover.SetValue(_fly_fast, true);
             _activate_mission.SetValue(_cruisers[target], true);
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
@@ -161,9 +160,10 @@ namespace IngameScript {
         void StartDocking(int target) {
             _target = target;
             _connector.Enabled = true;
+            _mode = Mode.Docking;
 
-            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                _activate_combat.SetValue(o, false);
+            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsFunctional)) {
+                o.Enabled = false;
             }
             _activate_mover.SetValue(_fly_safe, true);
             _activate_recorder.SetValue(_dockers[target], true);
@@ -174,12 +174,23 @@ namespace IngameScript {
         void TryConnect() {
             if (_connector.Status == MyShipConnectorStatus.Connectable) {
                 _connector.Connect();
+            }
+
+            if (_connector.Status == MyShipConnectorStatus.Connected) {
                 _activate_mover.SetValue(_fly_safe, false);
                 _activate_recorder.SetValue(_dockers[_target], false);
 
+                _mode = Mode.Connected;
                 _wait_counter = 30;
                 Runtime.UpdateFrequency = UpdateFrequency.Update100;
             }
+        }
+
+        void Flee() {
+            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsFunctional)) {
+                o.Enabled = false;
+            }
+            CruiseTo(0);
         }
 
         void BeCruising() {
@@ -188,16 +199,13 @@ namespace IngameScript {
             }
             if ((CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower) ?? 1.0f) < 0.1f) {
                 Echo("low battery! going home");
-                CruiseTo(0);
+                Flee();
             } else if ((CountFullness(_hydrogen_tanks, t => t.FilledRatio * t.Capacity, t => t.Capacity) ?? 1.0f) < 0.1f) {
                 Echo("low hydrogen! going home");
-                CruiseTo(0);
+                Flee();
             } else if (_offensives.Count > 0 && QueryItems(_terminals, i => (float)i.Amount, i => i.Type.TypeId == "AmmoMagazine") <= 0.0f) {
                 Echo("low ammo! going home");
-                foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                    _activate_combat.SetValue(o, false);
-                }
-                CruiseTo(0);
+                Flee();
             }
         }
 
@@ -211,8 +219,8 @@ namespace IngameScript {
         void Disconnect() {
             _connector.Enabled = false;
             _target = (_target + 1) % _cruisers.Count;
-            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsWorking)) {
-                _activate_combat.SetValue(o, true);
+            foreach (IMyOffensiveCombatBlock o in _offensives.Where(b => b.IsFunctional)) {
+                o.Enabled = true;
             }
             CruiseTo(_target);
         }
