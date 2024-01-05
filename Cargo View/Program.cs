@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using ParallelTasks;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Gui;
@@ -14,6 +15,7 @@ using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
 using VRage.Library;
+using VRage.Serialization;
 using VRageRender;
 
 namespace IngameScript {
@@ -300,7 +302,7 @@ namespace IngameScript {
             cargoCounts = new Dictionary<string, Dictionary<string, MyFixedPoint>>();
             List<MyInventoryItem> items = new List<MyInventoryItem>();
 
-            foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsWorking)) {
+            foreach (IMyTerminalBlock cargo in _cargos.Where(c => c.IsFunctional)) {
                 for (int i = 0; i < cargo.InventoryCount; ++i) {
                     items.Clear();
                     cargo.GetInventory(i).GetItems(items);
