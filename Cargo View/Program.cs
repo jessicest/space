@@ -21,6 +21,7 @@ using VRageRender;
 namespace IngameScript {
     partial class Program : MyGridProgram {
         private const string _version = "1.2";
+        private IMyProjector _repair_projector;
         private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         private readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
@@ -79,6 +80,7 @@ namespace IngameScript {
 
             CompileGridTidbits(infos);
             CompileWeaponInfos(infos);
+            CompileRepairInfos(infos);
 
             CompileCargoInfos(infos, out cargoCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
@@ -115,6 +117,12 @@ namespace IngameScript {
             LoadBlocks(_turrets);
             LoadBlocks(_weapons);
             LoadBlocks(_vents);
+
+            List<IMyProjector> projectors = new List<IMyProjector>();
+            LoadBlocks(projectors, block => block.CustomName.Contains("Repair"));
+            if (projectors.Count > 0) {
+                _repair_projector = projectors[0];
+            }
         }
 
         IEnumerable<T> Functional<T>(IEnumerable<T> blocks) where T : IMyTerminalBlock {
@@ -175,6 +183,13 @@ namespace IngameScript {
             infos.Add("GridTidbits", s);
         }
 
+        private void CompileRepairInfos(Dictionary<string, string> infos) {
+            var lines = new List<string>();
+            if (_repair_projector != null && _repair_projector.IsWorking) {
+                WriteInfos(infos, "Damage", _repair_projector.RemainingBlocksPerType, entry => entry.ToString());
+            }
+        }
+
         private void CompileWeaponInfos(Dictionary<string, string> infos) {
             List<string> lines = new List<string>();
             
@@ -233,7 +248,7 @@ namespace IngameScript {
                 counts.Add(tank.CustomName, (MyFixedPoint)(100 * tank.FilledRatio));
             }
 
-            WriteInfos(infos, "Oxygen", counts);
+            WriteInfos(infos, "Oxygen", counts, a => a.Key + ": " + a.Value.ToIntSafe());
         }
 
         Dictionary<string, MyFixedPoint> CompileQuotas() {
@@ -324,7 +339,7 @@ namespace IngameScript {
 
             foreach (KeyValuePair<string, Dictionary<string, MyFixedPoint>> categoryCounts in cargoCounts) {
                 string category = categoryCounts.Key.Substring(categoryCounts.Key.IndexOf("_") + 1);
-                WriteInfos(infos, category, categoryCounts.Value);
+                WriteInfos(infos, category, categoryCounts.Value, a => a.Key + ": " + a.Value.ToIntSafe());
             }
         }
 
@@ -354,14 +369,15 @@ namespace IngameScript {
                 }
             }
 
-            WriteInfos(infos, "Production", queue);
+            WriteInfos(infos, "Production", queue, a => a.Key + ": " + a.Value.ToIntSafe());
             return queue;
         }
 
-        void WriteInfos(Dictionary<string, string> infos, string category, Dictionary<string, MyFixedPoint> counts) {
+        void WriteInfos<T>(Dictionary<string, string> infos, string category, IEnumerable<T> entries, Func<T, string> f) {
             if (category == "Quota") return;
-            List<string> lines = counts.Select(count => count.Key + ": " + count.Value.ToIntSafe()).ToList();
-            lines.Sort();
+            IEnumerable<string> lines = entries
+                .Select(f)
+                .OrderBy(a => a);
             string s = category + "\n\n" + string.Join("\n", lines);
             infos.Add(category, s);
         }
@@ -370,9 +386,10 @@ namespace IngameScript {
             if (!_echoed) {
                 Echo("CargoInfo v" + _version + ". features:\n\n"
                     + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
-                    + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n"
-                    + "3) lcd of category 'Quota' will build items in an uncooperative assembler named 'Auto'.\n"
-                    + "4) Idle half-full assemblers will be flushed.\n"
+                    + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:' (untested)\n"
+                    + "3) lcd of category 'Quota' will build items in an uncooperative assembler. (disabled)\n"
+                    + "4) Idle half-full assemblers will be flushed. (disabled)\n"
+                    + "5) Name your self-repair projector with 'Repair' to see its info\n"
                     + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
