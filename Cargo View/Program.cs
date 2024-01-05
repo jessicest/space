@@ -19,16 +19,16 @@ using VRageRender;
 namespace IngameScript {
     partial class Program : MyGridProgram {
         private const string _version = "1.2";
-        private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
-        private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         private readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
-        private readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
-        private readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
         private readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
+        private readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
+        private readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
         private readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
-        private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
+        private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly DateTime _start_time;
         private int _reinit_counter = 0;
         private bool _echoed = false;
@@ -78,60 +78,26 @@ namespace IngameScript {
             BroadcastInfos(bakedInfos);
         }
 
+        void LoadBlocks<T>(List<T> list, Func<T, bool> f = null) where T : class, IMyTerminalBlock {
+            list.Clear();
+            GridTerminalSystem.GetBlocksOfType(list,
+                block => block.IsSameConstructAs(Me)
+                && (f == null || f(block)));
+        }
+
         private void Reinit() {
             _reinit_counter = 1000;
 
-            _cargos.Clear();
-            GridTerminalSystem.GetBlocksOfType(_cargos,
-                block => block.IsSameConstructAs(Me)
-                && block.HasInventory && block.IsWorking);
-
-            _assemblers.Clear();
-            GridTerminalSystem.GetBlocksOfType(_assemblers,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking);
-
-            _autoAssemblers.Clear();
-            GridTerminalSystem.GetBlocksOfType(_autoAssemblers,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking
-                && !block.CooperativeMode
-                && block.CustomName.Contains("Auto"));
-
-            _lcds.Clear();
-            GridTerminalSystem.GetBlocksOfType(_lcds,
-                block => block.IsSameConstructAs(Me)
-                && block.CustomName.Contains("CargoInfo:"));
-
-            _oxygen_tanks.Clear();
-            GridTerminalSystem.GetBlocksOfType(_oxygen_tanks,
-                block => block.IsSameConstructAs(Me)
-                && block.BlockDefinition.SubtypeName.Contains("Oxygen"));
-
-            _hydrogen_tanks.Clear();
-            GridTerminalSystem.GetBlocksOfType(_hydrogen_tanks,
-                block => block.IsSameConstructAs(Me)
-                && block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-
-            _batteries.Clear();
-            GridTerminalSystem.GetBlocksOfType(_batteries,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking);
-
-            _turrets.Clear();
-            GridTerminalSystem.GetBlocksOfType(_turrets,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking);
-
-            _connectors.Clear();
-            GridTerminalSystem.GetBlocksOfType(_connectors,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking);
-
-            _vents.Clear();
-            GridTerminalSystem.GetBlocksOfType(_vents,
-                block => block.IsSameConstructAs(Me)
-                && block.IsWorking);
+            LoadBlocks(_assemblers);
+            LoadBlocks(_autoAssemblers, block => !block.CooperativeMode);
+            LoadBlocks(_batteries);
+            LoadBlocks(_cargos, block => block.HasInventory);
+            LoadBlocks(_connectors);
+            LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
+            LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
+            LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
+            LoadBlocks(_turrets);
+            LoadBlocks(_vents);
         }
 
         MyFixedPoint CountFullness<T>(List<T> blocks, Func<T, double> getCurrent, Func<T, double> getMax) where T : IMyTerminalBlock {
@@ -337,7 +303,12 @@ namespace IngameScript {
 
         void EchoScriptInfo(ImmutableDictionary<string, string> infos) {
             if (!_echoed) {
-                Echo("CargoInfo v" + _version + ". features:\n\n1) local cargo display lcd name format is 'CargoInfo::<category>:'\n2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n3) lcd of category 'Quota' will build items in an uncooperative assembler named 'Auto'.\n4) Idle half-full assemblers will be flushed.\nCategories: " + String.Join(", ", infos.Keys.ToArray()));
+                Echo("CargoInfo v" + _version + ". features:\n\n"
+                    + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
+                    + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:'\n"
+                    + "3) lcd of category 'Quota' will build items in an uncooperative assembler named 'Auto'.\n"
+                    + "4) Idle half-full assemblers will be flushed.\n"
+                    + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
         }
