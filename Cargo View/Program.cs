@@ -9,6 +9,7 @@ using Sandbox.Definitions;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Gui;
 using Sandbox.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI.Ingame;
 using VRage;
 using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
@@ -22,11 +23,12 @@ namespace IngameScript {
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         private readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
-        private readonly List<IMyGasTank> _oxygen_tanks= new List<IMyGasTank>();
+        private readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
         private readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
         private readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
         private readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
+        private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         private readonly DateTime _start_time;
         private int _reinit_counter = 0;
         private bool _echoed = false;
@@ -62,10 +64,13 @@ namespace IngameScript {
             Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
 
             CompileGridTidbits(infos);
+
             CompileCargoInfos(infos, out cargoCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
             Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
             QueueQuotas(quotas, cargoCounts, productionCounts);
+
+            CompileOxygenInfos(infos);
 
             ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
             EchoScriptInfo(bakedInfos);
@@ -120,6 +125,11 @@ namespace IngameScript {
 
             _connectors.Clear();
             GridTerminalSystem.GetBlocksOfType(_connectors,
+                block => block.IsSameConstructAs(Me)
+                && block.IsWorking);
+
+            _vents.Clear();
+            GridTerminalSystem.GetBlocksOfType(_vents,
                 block => block.IsSameConstructAs(Me)
                 && block.IsWorking);
         }
@@ -179,6 +189,20 @@ namespace IngameScript {
             s += "Turrets, targeting: " + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
 
             infos.Add("GridTidbits", s);
+        }
+
+        private void CompileOxygenInfos(Dictionary<string, string> infos) {
+            Dictionary<string, MyFixedPoint> counts = new Dictionary<string, MyFixedPoint>();
+
+            foreach (IMyAirVent vent in _vents) {
+                counts.Add(vent.CustomName, (MyFixedPoint)(100 * vent.GetOxygenLevel()));
+            }
+
+            foreach (IMyGasTank tank in _oxygen_tanks) {
+                counts.Add(tank.CustomName, (MyFixedPoint)(100 * tank.FilledRatio));
+            }
+
+            WriteInfos(infos, "Oxygen", counts);
         }
 
         Dictionary<string, MyFixedPoint> CompileQuotas() {
