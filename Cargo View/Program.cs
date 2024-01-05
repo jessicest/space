@@ -33,6 +33,16 @@ namespace IngameScript {
         private int _reinit_counter = 0;
         private bool _echoed = false;
 
+        private MyFixedPoint Divf(MyFixedPoint a, MyFixedPoint b) {
+            a.RawValue *= 1000000;
+            a.RawValue /= b.RawValue;
+            return a;
+        }
+
+        private MyFixedPoint Sumf(IEnumerable<MyFixedPoint> values) {
+            return values.Aggregate(MyFixedPoint.Zero, (a, b) => a + b);
+        }
+
         private IMyTerminalBlock LoadBlock(string name) {
             var block = GridTerminalSystem.GetBlockWithName(name);
             if (block == null) {
@@ -100,36 +110,37 @@ namespace IngameScript {
             LoadBlocks(_vents);
         }
 
-        MyFixedPoint CountFullness<T>(List<T> blocks, Func<T, double> getCurrent, Func<T, double> getMax) where T : IMyTerminalBlock {
-            return CountFullness(blocks, a => (float)getCurrent(a), a => (float)getMax(a));
+        IEnumerable<T> Functional<T>(IEnumerable<T> blocks) where T : IMyTerminalBlock {
+            return blocks.Where(block => block.IsFunctional);
         }
 
-        MyFixedPoint CountFullness<T>(List<T> blocks, Func<T, float> getCurrent, Func<T, float> getMax) where T: IMyTerminalBlock {
-            float current = 0;
-            float max = 0;
+        MyFixedPoint Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, bool asPercentage = false) {
+            return Ratio(values, v => (MyFixedPoint)getEnumerator(v), v => (MyFixedPoint)getDenominator(v), asPercentage);
+        }
 
-            foreach (T b in blocks.Where(b => b.IsWorking)) {
-                current += getCurrent(b);
-                max += getMax(b);
-            }
+        MyFixedPoint Ratio<T>(IEnumerable<T> values, Func<T, float> getEnumerator, Func<T, float> getDenominator, bool asPercentage = false) {
+            return Ratio(values, v => (MyFixedPoint)getEnumerator(v), v => (MyFixedPoint)getDenominator(v), asPercentage);
+        }
 
-            if (max > 0) {
-                return (MyFixedPoint)(current / max);
+        MyFixedPoint Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, bool asPercentage = false) {
+            var value = Divf(Sumf(values.Select(v => getEnumerator(v))), Sumf(values.Select(v => getDenominator(v))));
+            if (asPercentage) {
+                return MyFixedPoint.Floor(value * 100);
             } else {
-                return MyFixedPoint.Zero;
+                return value;
             }
         }
 
-        float QueryInventories(IEnumerable<IMyTerminalBlock> blocks, Func<IMyInventory, MyFixedPoint> f) {
-            float result = 0;
-
-            foreach(IMyTerminalBlock block in blocks.Where(b => b.IsWorking)) {
-                for (int i = 0; i < block.InventoryCount; ++i) {
-                    result += (float)f(block.GetInventory(i));
-                }
+        IEnumerable<IMyInventory> Inventories(IMyTerminalBlock block) {
+            if (block.IsFunctional) {
+                return Enumerable.Range(0, block.InventoryCount).Select(i => block.GetInventory(i));
+            } else {
+                return Enumerable.Empty<IMyInventory>();
             }
+        }
 
-            return result;
+        IEnumerable<IMyInventory> Inventories(IEnumerable<IMyTerminalBlock> blocks) {
+            return blocks.SelectMany(block => Inventories(block));
         }
 
         private void CompileGridTidbits(Dictionary<string, string> infos) {
@@ -140,16 +151,16 @@ namespace IngameScript {
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
             s += "Assemblers, not producing: " + _assemblers.Where(a => a.IsWorking && !a.IsProducing).Count() + "\n";
             s += "Assemblers, not queued: " + _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count() + "\n";
-            s += "Battery input: " + (100 * CountFullness(_batteries, b => b.CurrentInput, b => b.MaxInput)) + "%\n";
-            s += "Battery output: " + (100 * CountFullness(_batteries, b => b.CurrentOutput, b => b.MaxOutput)) + "%\n";
-            s += "Battery stored: " + (100 * CountFullness(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower)) + "%\n";
-            s += "Cargo fullness: " + (100.0f * QueryInventories(_cargos, inv => inv.CurrentVolume) / QueryInventories(_cargos, inv => inv.MaxVolume)) + "%\n";
-            s += "Cargo mass: " + ((int)QueryInventories(_cargos, inv => inv.CurrentMass) / 1000) + "t\n";
-            s += "Docked ships: " + _connectors.Where(c => c.IsWorking && c.IsConnected).Count() + "\n";
-            s += "Hydrogen:" + (100 * CountFullness(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
-            s += "Oxygen: " + (100 * CountFullness(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity)) + "%\n";
+            s += "Battery input: " + Ratio(Functional(_batteries), b => b.CurrentInput, b => b.MaxInput, true) + "%\n";
+            s += "Battery output: " + Ratio(Functional(_batteries), b => b.CurrentOutput, b => b.MaxOutput, true) + "%\n";
+            s += "Battery stored: " + Ratio(Functional(_batteries), b => b.CurrentStoredPower, b => b.MaxStoredPower, true) + "%\n";
+            s += "Cargo fullness: " + Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, true) + "%\n";
+            s += "Cargo mass: " + Divf(Sumf(Inventories(_cargos).Select(inv => inv.CurrentMass)), 1000) + "t\n";
+            s += "Docked ships: " + _connectors.Where(c => c.IsFunctional && c.IsConnected).Count() + "\n";
+            s += "Hydrogen:" + Ratio(Functional(_hydrogen_tanks), b => b.FilledRatio * b.Capacity, b => b.Capacity, true) + "%\n";
+            s += "Oxygen:" + Ratio(Functional(_oxygen_tanks), b => b.FilledRatio * b.Capacity, b => b.Capacity, true) + "%\n";
             s += "Script activity: " + ((DateTime.Now.ToString())) + "\n";
-            s += "Script uptime: " + ((DateTime.Now - _start_time).TotalDays) + " days\n";
+            s += "Script uptime: " + elapsedTime + " days\n";
             s += "Script version: v" + _version + "\n";
             s += "Turrets, idle: " + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
             s += "Turrets, targeting: " + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
