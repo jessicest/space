@@ -32,6 +32,8 @@ namespace IngameScript {
         private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
         private readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        private readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
+        private readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         private readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
         private readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
@@ -94,6 +96,29 @@ namespace IngameScript {
             EchoScriptInfo(bakedInfos);
             WriteLCDs(bakedInfos);
             BroadcastInfos(bakedInfos);
+            FlushFlushables();
+        }
+
+        void FlushFlushables() {
+            if (_stashes.Count <= 0) {
+                return;
+            }
+
+            var stash = _stashes
+                .SelectMany(block => Inventories(block))
+                .MaxBy(inv => (float)(inv.MaxVolume - inv.CurrentVolume));
+
+            if (stash.VolumeFillFactor > 0.9f) {
+                return;
+            }
+
+            Random random = new Random();
+
+            foreach (var flushable in _flushables.Where(block => block.IsFunctional)) {
+                foreach (var inv in Inventories(flushable).Where(inv => inv.VolumeFillFactor >= 0.5f)) {
+                    inv.TransferItemTo(stash, random.Next(inv.ItemCount));
+                }
+            }
         }
 
         void LoadBlocks<T>(List<T> list, Func<T, bool> f = null) where T : class, IMyTerminalBlock {
@@ -111,14 +136,19 @@ namespace IngameScript {
             LoadBlocks(_batteries);
             LoadBlocks(_cargos, block => block.HasInventory);
             LoadBlocks(_connectors);
+            LoadBlocks(_flushables, block => block.CustomData.Contains("flush"));
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
             LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
+            LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
             LoadBlocks(_tools);
             LoadBlocks(_turrets);
             LoadBlocks(_weapons);
             LoadBlocks(_vents);
+
+            _flushables.AddRange(_assemblers);
+            _flushables.AddRange(_tools);
 
             List<IMyProjector> projectors = new List<IMyProjector>();
             LoadBlocks(projectors, block => block.CustomName.Contains("Repair"));
@@ -341,7 +371,7 @@ namespace IngameScript {
             }
         }
 
-        private Dictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos, bool clearAssemblers = false) {
+        private Dictionary<string, MyFixedPoint> CompileProductionInfos(Dictionary<string, string> infos) {
             Dictionary<string, MyFixedPoint> queue = new Dictionary<string, MyFixedPoint>();
             List<MyProductionItem> items = new List<MyProductionItem>();
 
@@ -357,14 +387,6 @@ namespace IngameScript {
                     }
                 }
                 items.Clear();
-
-                if (clearAssemblers && a.IsQueueEmpty) {
-                    if (a.Mode == MyAssemblerMode.Assembly && a.InputInventory.CurrentVolume > a.InputInventory.MaxVolume - a.InputInventory.CurrentVolume) {
-                        a.Mode = MyAssemblerMode.Disassembly;
-                    } else if (a.Mode == MyAssemblerMode.Disassembly && a.InputInventory.ItemCount == 0) {
-                        a.Mode = MyAssemblerMode.Assembly;
-                    }
-                }
             }
 
             WriteInfos(infos, "Production", queue, a => a.Key + ": " + a.Value.ToIntSafe());
@@ -385,8 +407,8 @@ namespace IngameScript {
                     + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
                     + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:' (untested)\n"
                     + "3) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
-                    + "4) Idle half-full assemblers will be flushed. (disabled)\n"
-                    + "5) Name your self-repair projector with 'Repair' to see its info\n"
+                    + "4) Half-full assemblers, tools, and blocks with 'flush' in their customdata will be flushed to Stash-named boxes. (untested)\n"
+                    + "5) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
                     + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
             }
