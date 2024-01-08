@@ -33,6 +33,7 @@ namespace IngameScript {
         private readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
         private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
+        private readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
         private readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
         private readonly DateTime _start_time;
         private int _reinit_counter = 0;
@@ -113,6 +114,7 @@ namespace IngameScript {
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
             LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
+            LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
             LoadBlocks(_tools);
             LoadBlocks(_turrets);
             LoadBlocks(_weapons);
@@ -256,12 +258,8 @@ namespace IngameScript {
             System.Text.RegularExpressions.Regex regex
                 = new System.Text.RegularExpressions.Regex(@"^\s*([^:]+): (\d+)\s*$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-            foreach (IMyTextPanel lcd in _lcds) {
+            foreach (IMyTextPanel lcd in _quota_screens) {
                 if (!lcd.IsWorking) {
-                    continue;
-                }
-
-                if (!lcd.CustomName.Contains(":Quota:")) {
                     continue;
                 }
 
@@ -374,7 +372,6 @@ namespace IngameScript {
         }
 
         void WriteInfos<T>(Dictionary<string, string> infos, string category, IEnumerable<T> entries, Func<T, string> f) {
-            if (category == "Quota") return;
             IEnumerable<string> lines = entries
                 .Select(f)
                 .OrderBy(a => a);
@@ -387,7 +384,7 @@ namespace IngameScript {
                 Echo("CargoInfo v" + _version + ". features:\n\n"
                     + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
                     + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:' (untested)\n"
-                    + "3) lcd of category 'Quota' will build items in an uncooperative assembler. (disabled)\n"
+                    + "3) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
                     + "4) Idle half-full assemblers will be flushed. (disabled)\n"
                     + "5) Name your self-repair projector with 'Repair' to see its info\n"
                     + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
@@ -414,18 +411,10 @@ namespace IngameScript {
                 string content;
                 string s = "";
 
-                bool taboo = false;
                 foreach (string targetName in targetNames) {
-                    if (targetName == "Quota") {
-                        taboo = true;
-                        break;
-                    }
                     if (infos.TryGetValue(targetName, out content)) {
                         s += content + "\n\n";
                     }
-                }
-                if (taboo) {
-                    continue;
                 }
 
                 lcd.WriteText(s);
