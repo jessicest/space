@@ -262,6 +262,7 @@ namespace IngameScript {
                         s += "nonfunctional";
                     }
                 }
+                lines.Add(s);
             }
 
             foreach (IMyUserControllableGun weapon in _weapons) {
@@ -281,6 +282,7 @@ namespace IngameScript {
                     } else {
                         s += "nonfunctional";
                     }
+                    lines.Add(s);
                 }
             }
 
