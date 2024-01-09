@@ -20,7 +20,9 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
-        const string _version = "1.3";
+        const string _version = "2.0";
+        readonly Dictionary<string, List<TextTarget>> _text_targets = new Dictionary<string, List<TextTarget>>();
+        readonly HashSet<string> _categories_seen = new HashSet<string>();
         readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
@@ -34,7 +36,6 @@ namespace IngameScript {
         readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
-        readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
         readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
         readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
         readonly DateTime _start_time;
@@ -97,6 +98,7 @@ namespace IngameScript {
             CompileGridTidbits(infos);
             CompileWeaponInfos(infos);
             CompileRepairInfos(infos);
+            CompileHelpText(infos);
 
             CompileCargoInfos(infos, out cargoCounts);
             Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
@@ -106,7 +108,8 @@ namespace IngameScript {
             CompileOxygenInfos(infos);
 
             ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
-            EchoScriptInfo(bakedInfos);
+            _categories_seen.UnionWith(bakedInfos.Keys);
+            EchoScriptInfo();
             WriteLCDs(bakedInfos);
             BroadcastInfos(bakedInfos);
             FlushFlushables();
@@ -152,7 +155,6 @@ namespace IngameScript {
             LoadBlocks(_connectors);
             LoadBlocks(_flushables, block => block.CustomData.Contains("Flush"));
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-            LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
             LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
@@ -164,6 +166,56 @@ namespace IngameScript {
 
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
+
+            ReinitTextTargets();
+        }
+
+        void ReinitTextTargets() {
+            _text_targets.Clear();
+
+            List<IMyTextPanel> lcds = new List<IMyTextPanel>();
+            LoadBlocks(lcds, block => block.CustomName.Contains("CargoInfo:"));
+
+            foreach (var lcd in lcds) {
+                var parts = lcd.CustomName.Split(':');
+                if (parts.Length != 4) {
+                    continue;
+                }
+
+                string grid_name = parts[1];
+                string categories = parts[2];
+
+                var target = new LcdTarget(lcd, categories.Split(','));
+                _text_targets[grid_name].Add(target);
+            }
+
+            List<IMyTerminalBlock> providers = new List<IMyTerminalBlock>();
+            LoadBlocks(providers, block => block is IMyTextSurfaceProvider);
+
+            foreach (var block in providers) {
+                var provider = (IMyTextSurfaceProvider)block;
+
+                foreach (string line in block.CustomData.Split('\n')) {
+                    var parts = line.Split(':');
+
+                    if (parts.Length != 5) {
+                        continue;
+                    }
+
+                    if (!parts[0].EndsWith("CargoInfo")) {
+                        continue;
+                    }
+
+                    int index;
+                    if (int.TryParse(parts[2], out index)) {
+                        string grid_name = parts[1];
+                        string categories = parts[3];
+
+                        var target = new SurfaceTarget(block, provider.GetSurface(index), categories.Split(','));
+                        _text_targets[grid_name].Add(target);
+                    }
+                }
+            }
         }
 
         IEnumerable<T> Functional<T>(IEnumerable<T> blocks) where T : IMyTerminalBlock {
@@ -227,6 +279,10 @@ namespace IngameScript {
             s += "Turrets, targeting: " + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
 
             infos.Add("GridTidbits", s);
+        }
+
+        private void CompileHelpText(Dictionary<string, string> infos) {
+            infos.Add("Help", GenerateHelpText());
         }
 
         private void CompileRepairInfos(Dictionary<string, string> infos) {
@@ -420,45 +476,42 @@ namespace IngameScript {
             infos.Add(category, s);
         }
 
-        void EchoScriptInfo(ImmutableDictionary<string, string> infos) {
+        string GenerateHelpText() {
+            return ("CargoInfo v" + _version + ". features:\n\n"
+                + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
+                + "2) remote display lcd name format is 'CargoInfo:<grid>:<categories>:' (untested)\n"
+                + "3) text surface custom data format, each line, is 'CargoInfo:<grid>:<index>:<categories>:' (untested)\n"
+                + "4) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
+                + "5) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
+                + "6) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
+                + "Categories: " + String.Join(", ", _categories_seen));
+        }
+
+        void EchoScriptInfo() {
             if (!_echoed) {
-                Echo("CargoInfo v" + _version + ". features:\n\n"
-                    + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
-                    + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:' (untested)\n"
-                    + "3) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
-                    + "4) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
-                    + "5) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
-                    + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
+                Echo(GenerateHelpText());
                 _echoed = true;
             }
         }
 
         void WriteLCDs(ImmutableDictionary<string, string> infos, string gridName = "") {
-            foreach (IMyTextPanel lcd in _lcds) {
-                if (!lcd.IsWorking) {
-                    continue;
-                }
-
-                string[] lcdNameParts = lcd.CustomName.Split(':');
-                if (lcdNameParts.Length != 4) {
-                    continue;
-                }
-
-                if (lcdNameParts[1] != gridName) {
-                    continue;
-                }
-
-                string[] targetNames = lcdNameParts[2].Split(',');
-                string content;
-                string s = "";
-
-                foreach (string targetName in targetNames) {
-                    if (infos.TryGetValue(targetName, out content)) {
-                        s += content + "\n\n";
+            List<TextTarget> grid_targets;
+            if (_text_targets.TryGetValue(gridName, out grid_targets)) {
+                foreach (var target in grid_targets) {
+                    if (!target.IsWorking) {
+                        continue;
                     }
-                }
 
-                lcd.WriteText(s);
+                    string s = "";
+                    foreach (string category in target.Categories) {
+                        string content;
+                        if (infos.TryGetValue(category, out content)) {
+                            s += content + "\n\n";
+                        }
+                    }
+
+                    target.Write(s);
+                }
             }
         }
 
@@ -475,6 +528,56 @@ namespace IngameScript {
 
         void BroadcastInfos(ImmutableDictionary<string, string> infos) {
             IGC.SendBroadcastMessage("CargoInfo", MyTuple.Create(Me.CubeGrid.CustomName, infos));
+        }
+
+        interface TextTarget {
+            bool IsWorking { get; }
+            IEnumerable<string> Categories { get; set; }
+            void Write(string s);
+        }
+
+        class LcdTarget : TextTarget {
+            readonly IMyTextPanel _lcd;
+
+            public LcdTarget(IMyTextPanel lcd, IEnumerable<string> categories) {
+                _lcd = lcd;
+                Categories = categories;
+            }
+
+            public bool IsWorking {
+                get {
+                    return _lcd.IsWorking;
+                }
+            }
+
+            public IEnumerable<string> Categories { get; set; }
+
+            public void Write(string s) {
+                _lcd.WriteText(s);
+            }
+        }
+
+        class SurfaceTarget : TextTarget {
+            readonly IMyTerminalBlock _owner;
+            readonly IMyTextSurface _surface;
+
+            public SurfaceTarget(IMyTerminalBlock owner, IMyTextSurface surface, IEnumerable<string> categories) {
+                _owner = owner;
+                _surface = surface;
+                Categories = categories;
+            }
+
+            public bool IsWorking {
+                get {
+                    return _owner.IsWorking;
+                }
+            }
+
+            public IEnumerable<string> Categories { get; set; }
+
+            public void Write(string s) {
+                _surface.WriteText(s);
+            }
         }
     }
 }
