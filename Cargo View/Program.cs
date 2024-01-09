@@ -41,10 +41,14 @@ namespace IngameScript {
         private int _reinit_counter = 0;
         private bool _echoed = false;
 
-        private MyFixedPoint Divf(MyFixedPoint a, MyFixedPoint b) {
-            a.RawValue *= 1000000;
-            a.RawValue /= b.RawValue;
-            return a;
+        private MyFixedPoint? Divf(MyFixedPoint a, MyFixedPoint b) {
+            if (b == MyFixedPoint.Zero) {
+                return null;
+            } else {
+                a.RawValue *= 1000000;
+                a.RawValue /= b.RawValue;
+                return a;
+            }
         }
 
         private MyFixedPoint Sumf(IEnumerable<MyFixedPoint> values) {
@@ -100,11 +104,12 @@ namespace IngameScript {
         }
 
         void FlushFlushables() {
-            if (_stashes.Count <= 0) {
+            if (_stashes.Where(block => block.IsFunctional).Count() <= 0) {
                 return;
             }
 
             var stash = _stashes
+                .Where(block => block.IsFunctional)
                 .SelectMany(block => Inventories(block))
                 .MaxBy(inv => (float)(inv.MaxVolume - inv.CurrentVolume));
 
@@ -136,7 +141,7 @@ namespace IngameScript {
             LoadBlocks(_batteries);
             LoadBlocks(_cargos, block => block.HasInventory);
             LoadBlocks(_connectors);
-            LoadBlocks(_flushables, block => block.CustomData.Contains("flush"));
+            LoadBlocks(_flushables, block => block.CustomData.Contains("Flush"));
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
             LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
@@ -170,7 +175,7 @@ namespace IngameScript {
         }
 
         MyFixedPoint Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, bool asPercentage = false) {
-            var value = Divf(Sumf(values.Select(v => getEnumerator(v))), Sumf(values.Select(v => getDenominator(v))));
+            var value = Divf(Sumf(values.Select(v => getEnumerator(v))), Sumf(values.Select(v => getDenominator(v)))) ?? MyFixedPoint.Zero;
             if (asPercentage) {
                 return MyFixedPoint.Floor(value * 100);
             } else {
@@ -407,7 +412,7 @@ namespace IngameScript {
                     + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
                     + "2) remote display lcd name format is 'CargoInfo:<grid>:<category>:' (untested)\n"
                     + "3) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
-                    + "4) Half-full assemblers, tools, and blocks with 'flush' in their customdata will be flushed to Stash-named boxes. (untested)\n"
+                    + "4) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
                     + "5) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
                     + "Categories: " + String.Join(", ", infos.Keys.ToArray()));
                 _echoed = true;
