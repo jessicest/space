@@ -20,26 +20,26 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
-        private const string _version = "1.3";
-        private IMyProjector _repair_projector;
-        private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
-        private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
-        private readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
-        private readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
-        private readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
-        private readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
-        private readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
-        private readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
-        private readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
-        private readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
-        private readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
-        private readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
-        private readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
-        private readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
-        private readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
-        private readonly DateTime _start_time;
-        private int _reinit_counter = 0;
-        private bool _echoed = false;
+        const string _version = "1.3";
+        readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
+        readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
+        readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
+        readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
+        readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
+        readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
+        readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
+        readonly List<IMyProjector> _repair_projectors = new List<IMyProjector>();
+        readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
+        readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
+        readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
+        readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
+        readonly List<IMyTextPanel> _lcds = new List<IMyTextPanel>();
+        readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
+        readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
+        readonly DateTime _start_time;
+        int _reinit_counter = 0;
+        bool _echoed = false;
 
         private MyFixedPoint? Divf(MyFixedPoint a, MyFixedPoint b, bool floor) {
             if (b == MyFixedPoint.Zero) {
@@ -155,6 +155,7 @@ namespace IngameScript {
             LoadBlocks(_lcds, block => block.CustomName.Contains("CargoInfo:"));
             LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
+            LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
             LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
             LoadBlocks(_tools);
             LoadBlocks(_turrets);
@@ -163,12 +164,6 @@ namespace IngameScript {
 
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
-
-            List<IMyProjector> projectors = new List<IMyProjector>();
-            LoadBlocks(projectors, block => block.CustomName.Contains("Repair"));
-            if (projectors.Count > 0) {
-                _repair_projector = projectors[0];
-            }
         }
 
         IEnumerable<T> Functional<T>(IEnumerable<T> blocks) where T : IMyTerminalBlock {
@@ -235,9 +230,12 @@ namespace IngameScript {
         }
 
         private void CompileRepairInfos(Dictionary<string, string> infos) {
-            var lines = new List<string>();
-            if (_repair_projector != null && _repair_projector.IsWorking) {
-                WriteInfos(infos, "Damage", _repair_projector.RemainingBlocksPerType, entry => entry.ToString());
+            var groups = _repair_projectors.Where(p => p.IsWorking)
+                .SelectMany(p => p.RemainingBlocksPerType)
+                .GroupBy(pair => pair.Key.ToString());
+
+            if (groups.Count() > 0) {
+                WriteInfos(infos, "Damage", groups, group => group.Key + ": " + group.Sum(pair => pair.Value));
             }
         }
 
