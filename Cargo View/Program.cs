@@ -20,7 +20,7 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
-        private const string _version = "1.2";
+        private const string _version = "1.3";
         private IMyProjector _repair_projector;
         private readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         private readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
@@ -69,7 +69,9 @@ namespace IngameScript {
             _start_time = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
 
-            DateTime.TryParse(Storage, out _start_time);
+            if (Storage != null && Storage != "") {
+                DateTime.TryParse(Storage, out _start_time);
+            }
         }
 
         public void Save() {
