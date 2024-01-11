@@ -205,6 +205,10 @@ namespace IngameScript {
             return blocks.Where(block => block.IsFunctional);
         }
 
+        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, string units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        }
+
         string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string units) {
             return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
         }
@@ -246,20 +250,20 @@ namespace IngameScript {
             // the list below should stay sorted, because all the other screens are sorted
 
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
-            s += "Assemblers, not producing: " + _assemblers.Where(a => a.IsWorking && !a.IsProducing).Count() + "\n";
-            s += "Assemblers, not queued: " + _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count() + "\n";
-            s += "Battery in: " + Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW") + "\n";
-            s += "Battery out: " + Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW") + "\n";
-            s += "Battery: " + Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh") + "\n";
-            s += "Cargo: " + Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL") + "\n";
-            s += "Cargo mass: " + Math.Floor(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum()) + "t\n";
-            s += "Docked ships: " + _connectors.Where(c => c.IsFunctional && c.IsConnected).Count() + "\n";
-            s += "H2: " + Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
-            s += "O2: " + Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
-            s += "Script uptime: " + Math.Floor(elapsedTime) + " days\n";
-            s += "Script version: v" + _version + "\n";
-            s += "Turrets, idle: " + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
-            s += "Turrets, targeting: " + _turrets.Where(t => t.IsWorking && t.HasTarget).Count() + "\n";
+            s += String.Format("Assemblers: active {0}, blocked {0}, idle {0}\n",
+                _assemblers.Where(a => a.IsWorking && a.IsProducing).Count(),
+                _assemblers.Where(a => a.IsWorking && !a.IsProducing && !a.IsQueueEmpty).Count(),
+                _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count());
+            s += String.Format("Battery in: {0}\n", Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW"));
+            s += String.Format("Battery out: {0}\n", Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW"));
+            s += String.Format("Battery: {0}\n", Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh"));
+            s += String.Format("Cargo: {0}\n", Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL"));
+            s += String.Format("Cargo mass: {0}kg\n", Math.Floor(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum()));
+            s += String.Format("Docked ships: {0}\n", _connectors.Where(c => c.IsFunctional && c.IsConnected).Count());
+            s += String.Format("H2: {0}\n", Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)"));
+            s += String.Format("O2: {0}\n", Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)"));
+            s += String.Format("Script v{0}: {1} days uptime\n", _version, Math.Floor(elapsedTime));
+            s += String.Format("Turrets with target: {0}\n", Ratio(_turrets, t => t.HasTarget ? 1 : 0, _ => 1, ""));
 
             infos.Add("GridTidbits", s);
         }
