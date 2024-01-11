@@ -60,13 +60,14 @@ namespace IngameScript {
             _start_time = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update100;
 
-            if (Storage != null && Storage != "") {
-                DateTime.TryParse(Storage, out _start_time);
+            var parts = Storage?.Split(',');
+            if (parts != null && parts.Length == 2 || parts[0] == _version) {
+                DateTime.TryParse(parts[1], out _start_time);
             }
         }
 
         public void Save() {
-            Storage = _start_time.ToString();
+            Storage = _version + "," + _start_time.ToString();
         }
 
         public void Main(string argument, UpdateType updateSource) {
