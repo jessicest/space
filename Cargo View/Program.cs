@@ -38,8 +38,11 @@ namespace IngameScript {
         readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
         readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
+        readonly List<IMyThrust> _thrusters = new List<IMyThrust>();
         readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
         readonly DateTime _start_time;
+
+        IMyShipController _main_cockpit = null;
         int _reinit_counter = 0;
         bool _echoed = false;
 
@@ -86,6 +89,7 @@ namespace IngameScript {
             QueueQuotas(quotas, cargoCounts, productionCounts);
 
             CompileOxygenInfos(infos);
+            CompileThrustInfos(infos);
 
             ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
             _categories_seen.UnionWith(bakedInfos.Keys);
@@ -139,6 +143,7 @@ namespace IngameScript {
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
             LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
             LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
+            LoadBlocks(_thrusters);
             LoadBlocks(_tools);
             LoadBlocks(_turrets);
             LoadBlocks(_weapons);
@@ -146,6 +151,14 @@ namespace IngameScript {
 
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
+
+            List<IMyShipController> cockpits = new List<IMyShipController>();
+            LoadBlocks(cockpits, block => block.IsMainCockpit);
+            if (cockpits.Count == 1) {
+                _main_cockpit = cockpits[0];
+            } else {
+                _main_cockpit = null;
+            }
 
             ReinitTextTargets();
         }
@@ -301,17 +314,24 @@ namespace IngameScript {
             }
         }
 
+        private float? GetBlockDamage(IMyTerminalBlock block) {
+            IMySlimBlock slim = block.CubeGrid.GetCubeBlock(block.Position);
+            if (slim == null || slim.IsDestroyed) {
+                return null;
+            }
+            return slim.DamageRatio;
+        }
+
         private void CompileWeaponInfos(Dictionary<string, string> infos) {
             List<string> lines = new List<string>();
             
             foreach (IMyShipToolBase tool in _tools) {
-                IMySlimBlock slim = tool.CubeGrid.GetCubeBlock(tool.Position);
-
                 string s = tool.CustomName + ": ";
-                if (slim == null || slim.IsDestroyed) {
+                float? damage = GetBlockDamage(tool);
+                if (damage == null) {
                     s += "destroyed";
                 } else {
-                    s += (int)(slim.DamageRatio * 100.0f) + "% HP, ";
+                    s += (int)(damage * 100.0f) + "% dmg, ";
 
                     if (tool.IsFunctional) {
                         s += Ratio(Inventories(tool), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL");
@@ -362,6 +382,44 @@ namespace IngameScript {
             }
 
             WriteInfos(infos, "Oxygen", counts, a => a.Key + ": " + a.Value.ToIntSafe());
+        }
+
+        private void CompileThrustInfos(Dictionary<string, string> infos) {
+            if (_main_cockpit == null) {
+                infos.Add("Thrust", "Thrust: no main cockpit found");
+                return;
+            }
+
+            var thrusterGroups = _thrusters.GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(t.Orientation.Forward));
+
+            List<string> lines = new List<string>();
+            lines.AddRange(thrusterGroups
+                .Select(group => String.Format("{0}: {1}, {2}\n", group.Key,
+                    Ratio(group, t => t.CurrentThrust, t => t.IsWorking ? t.MaxEffectiveThrust : 0, "N", "kN", "MN", "GN"),
+                    Ratio(
+                        group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
+                        s => s.CurrentDamage, s => s.MaxIntegrity, "i", "ki", "Mi", "Gi"))));
+
+            var gravity = _main_cockpit.GetTotalGravity();
+            var gravityDirection = gravity.Normalized();
+
+            lines.Add(String.Format("Gravity damping: {0}\n",
+                Ratio(_thrusters,
+                    t => { double q = t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection); return q < 0 ? -q : 0; },
+                    _ => gravity.Length(), "N", "kN", "MN", "GN")));
+
+            var velocity = _main_cockpit.GetShipVelocities().LinearVelocity;
+            var velocityDirection = velocity.Normalized();
+            var speed = velocity.Length();
+            var stoppingPower = _thrusters
+                .Select(t => t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
+                .Where(v => v < 0)
+                .Sum();
+
+            lines.Add(String.Format("Time to stop: {0}s\n",
+                speed < 0.0001 ? "stopped" : stoppingPower > 0 ? (speed / stoppingPower).ToString() : "forever"));
+
+            WriteInfos(infos, "Thrust", lines, a => a);
         }
 
         Dictionary<string, MyFixedPoint> CompileQuotas() {
