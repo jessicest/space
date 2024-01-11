@@ -139,7 +139,7 @@ namespace IngameScript {
             LoadBlocks(_connectors);
             LoadBlocks(_flushables, block => block.CustomData.Contains("Flush"));
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-            LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Oxygen"));
+            LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName == "");
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
             LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
             LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
