@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Reflection.Emit;
 using System.Text;
 using System.Text.RegularExpressions;
 using ParallelTasks;
@@ -205,19 +206,29 @@ namespace IngameScript {
             return blocks.Where(block => block.IsFunctional);
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, string units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        string WithUnits(float value, string label, params string[] labels) {
+            int candidate = 0;
+            while (candidate < labels.Count() && value >= 1000000.0f) {
+                value /= 1000.0f;
+                label = labels[candidate];
+                ++candidate;
+            }
+            return value + label;
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, string unit, params string[] units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, string units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string unit, params string[] units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, float> getEnumerator, Func<T, float> getDenominator, string units) {
+        string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, string unit, params string[] units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
+        }
+
+        string Ratio<T>(IEnumerable<T> values, Func<T, float> getEnumerator, Func<T, float> getDenominator, string unit, params string[] units) {
             IEnumerable<T> values2 = values.Where(v => !(v is IMyTerminalBlock) || ((IMyTerminalBlock)v).IsFunctional);
             var a = values2.Select(v => getEnumerator(v)).Sum();
             var b = values2.Select(v => getDenominator(v)).Sum();
@@ -225,9 +236,17 @@ namespace IngameScript {
             if (b == 0) {
                 return "None";
             } else {
+                int candidate = 0;
+                while (candidate < units.Count() && b >= 1000000.0f) {
+                    a /= 1000.0f;
+                    b /= 1000.0f;
+                    unit = units[candidate];
+                    ++candidate;
+                }
+
                 return Math.Floor(a)
-                    + " of " + Math.Floor(b) + " " + units
-                    + " (" + Math.Floor(100 * a / b) + "%)";
+                    + " of " + Math.Floor(b) + " " + unit
+                    + " (" + Math.Floor(100.0f * a / b) + "%)";
             }
         }
 
@@ -254,14 +273,14 @@ namespace IngameScript {
                 _assemblers.Where(a => a.IsWorking && a.IsProducing).Count(),
                 _assemblers.Where(a => a.IsWorking && !a.IsProducing && !a.IsQueueEmpty).Count(),
                 _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count());
-            s += String.Format("Battery in: {0}\n", Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW"));
-            s += String.Format("Battery out: {0}\n", Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW"));
-            s += String.Format("Battery: {0}\n", Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh"));
-            s += String.Format("Cargo: {0}\n", Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL"));
-            s += String.Format("Cargo mass: {0}kg\n", Math.Floor(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum()));
+            s += String.Format("Battery in: {0}\n", Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW", "GW"));
+            s += String.Format("Battery out: {0}\n", Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW", "GW"));
+            s += String.Format("Battery: {0}\n", Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh", "GWh"));
+            s += String.Format("Cargo: {0}\n", Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL", "ML"));
+            s += String.Format("Cargo mass: {0}\n", WithUnits(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum(), "kg", "t", "kt", "Mt"));
             s += String.Format("Docked ships: {0}\n", _connectors.Where(c => c.IsFunctional && c.IsConnected).Count());
-            s += String.Format("H2: {0}\n", Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)"));
-            s += String.Format("O2: {0}\n", Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)"));
+            s += String.Format("H2: {0}\n", Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
+            s += String.Format("O2: {0}\n", Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
             s += String.Format("Script v{0}: {1} days uptime\n", _version, Math.Floor(elapsedTime));
             s += String.Format("Turrets with target: {0}\n", Ratio(_turrets, t => t.HasTarget ? 1 : 0, _ => 1, ""));
 
