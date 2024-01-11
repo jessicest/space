@@ -208,6 +208,10 @@ namespace IngameScript {
                         string grid_name = parts[1];
                         string categories = parts[3];
 
+                        if (!_text_targets.ContainsKey(grid_name)) {
+                            _text_targets.Add(grid_name, new List<TextTarget>());
+                        }
+
                         var target = new SurfaceTarget(block, provider.GetSurface(index), categories.Split(','));
                         _text_targets[grid_name].Add(target);
                     }
@@ -221,7 +225,7 @@ namespace IngameScript {
 
         string WithUnits(float value, string label, params string[] labels) {
             int candidate = 0;
-            while (candidate < labels.Count() && value >= 1000000.0f) {
+            while (candidate < labels.Count() && value >= 10000.0f) {
                 value /= 1000.0f;
                 label = labels[candidate];
                 ++candidate;
@@ -250,7 +254,7 @@ namespace IngameScript {
                 return "None";
             } else {
                 int candidate = 0;
-                while (candidate < units.Count() && b >= 1000000.0f) {
+                while (candidate < units.Count() && b >= 10000.0f) {
                     a /= 1000.0f;
                     b /= 1000.0f;
                     unit = units[candidate];
@@ -394,7 +398,7 @@ namespace IngameScript {
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
-                .Select(group => String.Format("{0}: {1}, {2}\n", group.Key,
+                .Select(group => String.Format("{0}: {1}, {2}", group.Key,
                     Ratio(group, t => t.CurrentThrust, t => t.IsWorking ? t.MaxEffectiveThrust : 0, "N", "kN", "MN", "GN"),
                     Ratio(
                         group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
@@ -403,7 +407,7 @@ namespace IngameScript {
             var gravity = _main_cockpit.GetTotalGravity();
             var gravityDirection = gravity.Normalized();
 
-            lines.Add(String.Format("Gravity damping: {0}\n",
+            lines.Add(String.Format("Gravity damping: {0}",
                 Ratio(_thrusters,
                     t => { double q = t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection); return q < 0 ? -q : 0; },
                     _ => gravity.Length(), "N", "kN", "MN", "GN")));
@@ -416,8 +420,8 @@ namespace IngameScript {
                 .Where(v => v < 0)
                 .Sum();
 
-            lines.Add(String.Format("Time to stop: {0}s\n",
-                speed < 0.0001 ? "stopped" : stoppingPower > 0 ? (speed / stoppingPower).ToString() : "forever"));
+            lines.Add(String.Format("Time to stop: {0}",
+                speed < 0.0001 ? "stopped" : stoppingPower > 0 ? (speed / stoppingPower).ToString() + "s" : "forever"));
 
             WriteInfos(infos, "Thrust", lines, a => a);
         }
