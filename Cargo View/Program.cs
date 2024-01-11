@@ -20,7 +20,7 @@ using VRageRender;
 
 namespace IngameScript {
     partial class Program : MyGridProgram {
-        const string _version = "2.0";
+        const string _version = "2.1.0";
         readonly Dictionary<string, List<TextTarget>> _text_targets = new Dictionary<string, List<TextTarget>>();
         readonly HashSet<string> _categories_seen = new HashSet<string>();
         readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
@@ -41,27 +41,6 @@ namespace IngameScript {
         readonly DateTime _start_time;
         int _reinit_counter = 0;
         bool _echoed = false;
-
-        private MyFixedPoint? Divf(MyFixedPoint a, MyFixedPoint b, bool floor) {
-            if (b == MyFixedPoint.Zero) {
-                return null;
-            } else {
-                a.RawValue *= 1000000;
-                a.RawValue /= b.RawValue;
-                if (floor) {
-                    a = MyFixedPoint.Floor(a);
-                }
-                return a;
-            }
-        }
-
-        private MyFixedPoint Sumf(IEnumerable<MyFixedPoint> values, bool floor) {
-            MyFixedPoint result = values.Aggregate(MyFixedPoint.Zero, (a, b) => a + b);
-            if (floor) {
-                result = MyFixedPoint.Floor(result);
-            }
-            return result;
-        }
 
         private IMyTerminalBlock LoadBlock(string name) {
             var block = GridTerminalSystem.GetBlockWithName(name);
@@ -226,25 +205,25 @@ namespace IngameScript {
             return blocks.Where(block => block.IsFunctional);
         }
 
+        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        }
+
         string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, string units) {
-            return Ratio(values, v => (MyFixedPoint)getEnumerator(v), v => (MyFixedPoint)getDenominator(v), units);
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
         }
 
         string Ratio<T>(IEnumerable<T> values, Func<T, float> getEnumerator, Func<T, float> getDenominator, string units) {
-            return Ratio(values, v => (MyFixedPoint)getEnumerator(v), v => (MyFixedPoint)getDenominator(v), units);
-        }
-
-        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string units) {
             IEnumerable<T> values2 = values.Where(v => !(v is IMyTerminalBlock) || ((IMyTerminalBlock)v).IsFunctional);
-            var a = Sumf(values2.Select(v => getEnumerator(v)), false);
-            var b = Sumf(values2.Select(v => getDenominator(v)), false);
+            var a = values2.Select(v => getEnumerator(v)).Sum();
+            var b = values2.Select(v => getDenominator(v)).Sum();
 
             if (b == 0) {
                 return "None";
             } else {
-                return MyFixedPoint.Floor(a)
-                    + " of " + MyFixedPoint.Floor(b) + " " + units
-                    + " (" + (Divf(100 * a, b, true) ?? 0) + "%)";
+                return Math.Floor(a)
+                    + " of " + Math.Floor(b) + " " + units
+                    + " (" + Math.Floor(100 * a / b) + "%)";
             }
         }
 
@@ -273,7 +252,7 @@ namespace IngameScript {
             s += "Battery out: " + Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW") + "\n";
             s += "Battery: " + Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh") + "\n";
             s += "Cargo: " + Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL") + "\n";
-            s += "Cargo mass: " + Sumf(Inventories(_cargos).Select(inv => inv.CurrentMass), true) + "t\n";
+            s += "Cargo mass: " + Math.Floor(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum()) + "t\n";
             s += "Docked ships: " + _connectors.Where(c => c.IsFunctional && c.IsConnected).Count() + "\n";
             s += "H2: " + Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
             s += "O2: " + Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
