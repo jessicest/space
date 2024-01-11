@@ -185,6 +185,10 @@ namespace IngameScript {
                 string grid_name = parts[1];
                 string categories = parts[2];
 
+                if (!_text_targets.ContainsKey(grid_name)) {
+                    _text_targets.Add(grid_name, new List<TextTarget>());
+                }
+
                 var target = new LcdTarget(lcd, categories.Split(','));
                 _text_targets[grid_name].Add(target);
             }
@@ -238,7 +242,7 @@ namespace IngameScript {
             if (b == 0) {
                 return "None";
             } else {
-                return MyFixedPoint.Floor(a) + " " + units
+                return MyFixedPoint.Floor(a)
                     + " of " + MyFixedPoint.Floor(b) + " " + units
                     + " (" + (Divf(100 * a, b, true) ?? 0) + "%)";
             }
@@ -265,14 +269,14 @@ namespace IngameScript {
             double elapsedTime = (DateTime.Now - _start_time).TotalDays;
             s += "Assemblers, not producing: " + _assemblers.Where(a => a.IsWorking && !a.IsProducing).Count() + "\n";
             s += "Assemblers, not queued: " + _assemblers.Where(a => a.IsWorking && a.IsQueueEmpty).Count() + "\n";
-            s += "Battery input: " + Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW") + "\n";
-            s += "Battery output: " + Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW") + "\n";
+            s += "Battery in: " + Ratio(_batteries, b => b.CurrentInput, b => b.MaxInput, "MW") + "\n";
+            s += "Battery out: " + Ratio(_batteries, b => b.CurrentOutput, b => b.MaxOutput, "MW") + "\n";
             s += "Battery: " + Ratio(_batteries, b => b.CurrentStoredPower, b => b.MaxStoredPower, "MWh") + "\n";
             s += "Cargo: " + Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL") + "\n";
             s += "Cargo mass: " + Sumf(Inventories(_cargos).Select(inv => inv.CurrentMass), true) + "t\n";
             s += "Docked ships: " + _connectors.Where(c => c.IsFunctional && c.IsConnected).Count() + "\n";
-            s += "Hydrogen:" + Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
-            s += "Oxygen:" + Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
+            s += "H2: " + Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
+            s += "O2: " + Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L(?)") + "\n";
             s += "Script uptime: " + Math.Floor(elapsedTime) + " days\n";
             s += "Script version: v" + _version + "\n";
             s += "Turrets, idle: " + _turrets.Where(t => t.IsWorking && !t.HasTarget).Count() + "\n";
@@ -302,7 +306,7 @@ namespace IngameScript {
                 IMySlimBlock slim = tool.CubeGrid.GetCubeBlock(tool.Position);
 
                 string s = tool.CustomName + ": ";
-                if (slim.IsDestroyed) {
+                if (slim == null || slim.IsDestroyed) {
                     s += "destroyed";
                 } else {
                     s += (int)(slim.DamageRatio * 100.0f) + "% HP, ";
@@ -323,7 +327,7 @@ namespace IngameScript {
                 IMySlimBlock slim = weapon.CubeGrid.GetCubeBlock(weapon.Position);
 
                 string s = weapon.CustomName + ": ";
-                if (slim.IsDestroyed) {
+                if (slim == null || slim.IsDestroyed) {
                     s += "destroyed";
                 } else {
                     s += (int)(slim.DamageRatio * 100.0f) + "% HP, ";
@@ -336,8 +340,8 @@ namespace IngameScript {
                     } else {
                         s += "nonfunctional";
                     }
-                    lines.Add(s);
                 }
+                lines.Add(s);
             }
 
             lines.Sort();
