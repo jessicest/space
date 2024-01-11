@@ -182,6 +182,7 @@ namespace IngameScript {
                     _text_targets.Add(grid_name, new List<TextTarget>());
                 }
 
+                lcd.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                 var target = new LcdTarget(lcd, categories.Split(','));
                 _text_targets[grid_name].Add(target);
             }
@@ -212,7 +213,9 @@ namespace IngameScript {
                             _text_targets.Add(grid_name, new List<TextTarget>());
                         }
 
-                        var target = new SurfaceTarget(block, provider.GetSurface(index), categories.Split(','));
+                        var surface = provider.GetSurface(index);
+                        surface.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
+                        var target = new SurfaceTarget(block, surface, categories.Split(','));
                         _text_targets[grid_name].Add(target);
                     }
                 }
@@ -233,38 +236,44 @@ namespace IngameScript {
             return value + label;
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, string unit, params string[] units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
-        }
-
-        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, string unit, params string[] units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
-        }
-
-        string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, string unit, params string[] units) {
-            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), unit, units);
-        }
-
-        string Ratio<T>(IEnumerable<T> values, Func<T, float> getEnumerator, Func<T, float> getDenominator, string unit, params string[] units) {
-            IEnumerable<T> values2 = values.Where(v => !(v is IMyTerminalBlock) || ((IMyTerminalBlock)v).IsFunctional);
-            var a = values2.Select(v => getEnumerator(v)).Sum();
-            var b = values2.Select(v => getDenominator(v)).Sum();
-
-            if (b == 0) {
-                return "None";
-            } else {
-                int candidate = 0;
-                while (candidate < units.Count() && b >= 10000.0f) {
-                    a /= 1000.0f;
-                    b /= 1000.0f;
-                    unit = units[candidate];
-                    ++candidate;
+        string ToUnits(double[] values, params string[] units) {
+            int unitsIndex = 0;
+            while (unitsIndex + 1 < units.Length && values[0] >= 10000.0) {
+                for (int i = 0; i < values.Length; ++i) {
+                    values[i] /= 1000.0;
                 }
-
-                return Math.Floor(a)
-                    + " of " + Math.Floor(b) + " " + unit
-                    + " (" + Math.Floor(100.0f * a / b) + "%)";
+                ++unitsIndex;
             }
+            return units[unitsIndex];
+        }
+
+        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, params string[] units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        }
+
+        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, params string[] units) {
+            return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
+        }
+
+        string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, params string[] units) {
+            return DeepRatio(
+                values,
+                vs => vs.Select(v => getEnumerator(v)).Sum(),
+                vs => vs.Select(v => getDenominator(v)).Sum(),
+                "{0:0} of {1:0} {2} ({3:0}%)",
+                units);
+        }
+
+        string DeepRatio<T>(IEnumerable<T> values, Func<IEnumerable<T>, double> getEnumerator, Func<IEnumerable<T>, double> getDenominator, string formatString, params string[] units) {
+            IEnumerable<T> values2 = values.Where(v => !(v is IMyTerminalBlock) || ((IMyTerminalBlock)v).IsFunctional);
+
+            
+            var vals = new[] { getDenominator(values2), getEnumerator(values2) };
+            var unit = ToUnits(vals, units);
+            var a = vals[1];
+            var b = vals[0];
+
+            return b != 0 ? String.Format(formatString, a, b, unit, a * 100.0 / b) : "None";
         }
 
         IEnumerable<IMyInventory> Inventories(IMyTerminalBlock block) {
@@ -299,6 +308,9 @@ namespace IngameScript {
             s += String.Format("H2: {0}\n", Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
             s += String.Format("O2: {0}\n", Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
             s += String.Format("Script v{0}: {1} days uptime\n", _version, Math.Floor(elapsedTime));
+            if (_main_cockpit != null) {
+                s += String.Format("Ship mass: {0}\n", _main_cockpit.CalculateShipMass().PhysicalMass);
+            }
             s += String.Format("Turrets with target: {0}\n", Ratio(_turrets, t => t.HasTarget ? 1 : 0, _ => 1, ""));
 
             infos.Add("GridTidbits", s);
@@ -394,11 +406,13 @@ namespace IngameScript {
                 return;
             }
 
+            var shipMass = _main_cockpit.CalculateShipMass().PhysicalMass;
+
             var thrusterGroups = _thrusters.GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(t.Orientation.Forward));
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
-                .Select(group => String.Format("{0}: {1}, {2}", group.Key,
+                .Select(group => String.Format("Go {0}: {1}, {2}", group.Key.ToString()[0],
                     Ratio(group, t => t.CurrentThrust, t => t.IsWorking ? t.MaxEffectiveThrust : 0, "N", "kN", "MN", "GN"),
                     Ratio(
                         group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
@@ -408,20 +422,23 @@ namespace IngameScript {
             var gravityDirection = gravity.Normalized();
 
             lines.Add(String.Format("Gravity damping: {0}",
-                Ratio(_thrusters,
-                    t => { double q = t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection); return q < 0 ? -q : 0; },
-                    _ => gravity.Length(), "N", "kN", "MN", "GN")));
+                DeepRatio(_thrusters,
+                    ts => ts
+                        .Select(t => t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection))
+                        .Where(f => f < 0).Sum() / -shipMass,
+                    _ => gravity.Length(),
+                    "{0:0.00} of {1:0.00} {2} ({3:0}%)", "mss", "kmss")));
 
             var velocity = _main_cockpit.GetShipVelocities().LinearVelocity;
             var velocityDirection = velocity.Normalized();
             var speed = velocity.Length();
             var stoppingPower = _thrusters
-                .Select(t => t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
-                .Where(v => v < 0)
-                .Sum();
+                .Select(t => -t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
+                .Where(v => v > 0)
+                .Sum() / shipMass;
 
             lines.Add(String.Format("Time to stop: {0}",
-                speed < 0.0001 ? "stopped" : stoppingPower > 0 ? (speed / stoppingPower).ToString() + "s" : "forever"));
+                speed < 0.000001 ? "stopped" : stoppingPower != 0 ? String.Format("{0.00s}", speed / stoppingPower) : "forever"));
 
             WriteInfos(infos, "Thrust", lines, a => a);
         }
