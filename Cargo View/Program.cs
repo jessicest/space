@@ -409,7 +409,7 @@ namespace IngameScript {
 
             var shipMass = _main_cockpit.CalculateShipMass().PhysicalMass;
 
-            var thrusterGroups = _thrusters.GroupBy(t => _main_cockpit.Orientation.TransformDirection(t.Orientation.Forward));
+            var thrusterGroups = _thrusters.GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(_main_cockpit.Orientation.TransformDirection(t.Orientation.Forward)));
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
@@ -435,12 +435,12 @@ namespace IngameScript {
             var velocityDirection = velocity.Normalized();
             var speed = velocity.Length();
             var stoppingPower = _thrusters
-                .Select(t => -t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
-                .Where(v => v > 0)
+                .Select(t => t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
+                .Where(v => v > 0.001)
                 .Sum() / shipMass;
 
             lines.Add(String.Format("Time to stop: {0}",
-                speed < 0.000001 ? "stopped" : stoppingPower != 0 ? String.Format("{0.00s}", speed / stoppingPower) : "forever"));
+                speed < 0.001 ? "stopped" : stoppingPower != 0 ? String.Format("{0.00s}", speed / stoppingPower) : "forever"));
 
             WriteInfos(infos, "Thrust", lines, a => a);
         }
