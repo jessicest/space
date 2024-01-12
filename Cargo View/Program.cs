@@ -24,6 +24,7 @@ namespace IngameScript {
         const string _version = "2.1.0";
         readonly Dictionary<string, List<TextTarget>> _text_targets = new Dictionary<string, List<TextTarget>>();
         readonly HashSet<string> _categories_seen = new HashSet<string>();
+        readonly List<IMyTerminalBlock> _detailed_info_sources = new List<IMyTerminalBlock>();
         readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
@@ -82,6 +83,7 @@ namespace IngameScript {
             CompileGridTidbits(infos);
             CompileWeaponInfos(infos);
             CompileRepairInfos(infos);
+            CompileDetailedInfos(infos);
             CompileHelpText(infos);
 
             CompileCargoInfos(infos, out cargoCounts);
@@ -169,6 +171,7 @@ namespace IngameScript {
 
             List<IMyTextPanel> lcds = new List<IMyTextPanel>();
             LoadBlocks(lcds, block => block.CustomName.Contains("CargoInfo:"));
+            HashSet<string> detailedInfoSources = new HashSet<string>();
 
             foreach (var lcd in lcds) {
                 var parts = lcd.CustomName.Split(':');
@@ -177,15 +180,19 @@ namespace IngameScript {
                 }
 
                 string grid_name = parts[1];
-                string categories = parts[2];
+                string[] categories = parts[2].Split(',');
 
                 if (!_text_targets.ContainsKey(grid_name)) {
                     _text_targets.Add(grid_name, new List<TextTarget>());
                 }
 
                 lcd.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
-                var target = new LcdTarget(lcd, categories.Split(','));
+                var target = new LcdTarget(lcd, categories);
                 _text_targets[grid_name].Add(target);
+
+                foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
+                    detailedInfoSources.Add(s.Substring("Block/".Length));
+                }
             }
 
             List<IMyTerminalBlock> providers = new List<IMyTerminalBlock>();
@@ -208,7 +215,7 @@ namespace IngameScript {
                     int index;
                     if (int.TryParse(parts[2], out index)) {
                         string grid_name = parts[1];
-                        string categories = parts[3];
+                        string[] categories = parts[3].Split(',');
 
                         if (!_text_targets.ContainsKey(grid_name)) {
                             _text_targets.Add(grid_name, new List<TextTarget>());
@@ -216,11 +223,19 @@ namespace IngameScript {
 
                         var surface = provider.GetSurface(index);
                         surface.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
-                        var target = new SurfaceTarget(block, surface, categories.Split(','));
+                        var target = new SurfaceTarget(block, surface, categories);
                         _text_targets[grid_name].Add(target);
+
+                        foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
+                            detailedInfoSources.Add(s.Substring("Block/".Length));
+                        }
                     }
                 }
             }
+
+            _detailed_info_sources.AddRange(detailedInfoSources
+                .Select(s => GridTerminalSystem.GetBlockWithName(s))
+                .Where(b => b != null));
         }
 
         IEnumerable<T> Functional<T>(IEnumerable<T> blocks) where T : IMyTerminalBlock {
@@ -328,6 +343,12 @@ namespace IngameScript {
 
             if (groups.Count() > 0) {
                 WriteInfos(infos, "Damage", groups, group => group.Key + ": " + group.Sum(pair => pair.Value));
+            }
+        }
+
+        void CompileDetailedInfos(Dictionary<string, string> infos) {
+            foreach (var block in _detailed_info_sources) {
+                infos.Add("Block/" + block.CustomName, block.DetailedInfo);
             }
         }
 
@@ -567,10 +588,11 @@ namespace IngameScript {
             return ("CargoInfo v" + _version + ". features:\n\n"
                 + "1) local cargo display lcd name format is 'CargoInfo::<category>:'\n"
                 + "2) remote display lcd name format is 'CargoInfo:<grid>:<categories>:' (untested)\n"
-                + "3) text surface custom data format, each line, is 'CargoInfo:<grid>:<index>:<categories>:' (untested)\n"
-                + "4) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
-                + "5) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
-                + "6) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
+                + "3) text surface custom data format, each line, is 'CargoInfo:<grid>:<index>:<categories>:'\n"
+                + "4) use category Block/abc to show the Detailed Info panel from a block named 'abc'.\n"
+                + "5) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
+                + "6) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
+                + "7) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
                 + "Categories: " + String.Join(", ", _categories_seen));
         }
 
