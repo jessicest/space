@@ -44,6 +44,10 @@ namespace IngameScript {
         readonly DateTime _start_time;
 
         IMyShipController _main_cockpit = null;
+        IMyTextPanel _production_id_mappings = null;
+        readonly Dictionary<string, string> _item_ids_to_blueprint_ids = new Dictionary<string, string>();
+        readonly Dictionary<string, string> _blueprint_ids_to_item_ids = new Dictionary<string, string>();
+
         int _reinit_counter = 0;
         bool _echoed = false;
 
@@ -90,7 +94,7 @@ namespace IngameScript {
                 CompileCargoInfos(infos, out cargoCounts);
                 Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
                 Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
-                QueueQuotas(quotas, cargoCounts, productionCounts);
+                QueueQuotas(quotas, cargoCounts, productionCounts, infos);
 
                 CompileOxygenInfos(infos);
                 CompileThrustInfos(infos);
@@ -105,6 +109,24 @@ namespace IngameScript {
                 Runtime.UpdateFrequency = UpdateFrequency.None;
                 foreach (var surface in _text_targets.Values.SelectMany(a => a).Where(b => b.IsWorking)) {
                     surface.Write(ex.ToString());
+                }
+            }
+        }
+
+        void ReadProductionIDMappings() {
+            if (_production_id_mappings == null) {
+                return;
+            }
+
+            foreach (var row in _production_id_mappings.GetText().Split('\n')) {
+                var parts = row.Split(':');
+                if (parts.Length == 2) {
+                    string itemId = parts[0].Trim();
+                    string blueprintId = parts[1].Trim();
+                    if (!_item_ids_to_blueprint_ids.ContainsKey(itemId) && !_blueprint_ids_to_item_ids.ContainsKey(blueprintId)) {
+                        _item_ids_to_blueprint_ids.Add(itemId, blueprintId);
+                        _blueprint_ids_to_item_ids.Add(blueprintId, itemId);
+                    }
                 }
             }
         }
@@ -139,6 +161,18 @@ namespace IngameScript {
                 && (f == null || f(block)));
         }
 
+        T LoadOneBlock<T>(Func<T, bool> f, bool throwIfAbsent) where T : class, IMyTerminalBlock {
+            List<T> list = new List<T>();
+            LoadBlocks(list, f);
+            if (list.Count > 0) {
+                return list[0];
+            } else if (throwIfAbsent) {
+                throw new Exception("wait but i didn't find that thingo");
+            } else {
+                return null;
+            }
+        }
+
         private void Reinit() {
             _reinit_counter = 1000;
 
@@ -162,13 +196,9 @@ namespace IngameScript {
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
 
-            List<IMyShipController> cockpits = new List<IMyShipController>();
-            LoadBlocks(cockpits, block => block.IsMainCockpit);
-            if (cockpits.Count == 1) {
-                _main_cockpit = cockpits[0];
-            } else {
-                _main_cockpit = null;
-            }
+            _main_cockpit = LoadOneBlock<IMyShipController>(block => block.IsMainCockpit, false);
+            _production_id_mappings = LoadOneBlock<IMyTextPanel>(block => block.CustomName.Contains("Production IDs"), true);
+            ReadProductionIDMappings();
 
             ReinitTextTargets();
         }
@@ -506,7 +536,10 @@ namespace IngameScript {
         void QueueQuotas(
             Dictionary<string, MyFixedPoint> quotas,
             Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts,
-            Dictionary<string, MyFixedPoint> productionCounts) {
+            Dictionary<string, MyFixedPoint> productionCounts,
+            Dictionary<string, string> infos) {
+
+            string ss = "Quota Info\n\n";
 
             if (_autoAssemblers.Count == 0) {
                 return;
@@ -514,25 +547,39 @@ namespace IngameScript {
 
             foreach (var quota in quotas) {
                 var amountNeeded = quota.Value;
+                string s = quota.Key + ": " + quota.Value;
                 foreach (var counts in cargoCounts.Values) {
                     if (counts.ContainsKey(quota.Key)) {
                         amountNeeded -= counts[quota.Key];
+                        s += " (-" + counts[quota.Key] + ")";
                     }
                 }
                 if (productionCounts.ContainsKey(quota.Key)) {
                     amountNeeded -= productionCounts[quota.Key];
+                    s += " {-" + productionCounts[quota.Key] + "}";
                 }
                 if (amountNeeded > 0) {
-                    MyDefinitionId id;
-                    if (MyDefinitionId.TryParse("MyObjectBuilder_BlueprintDefinition/" + quota.Key, out id)) {
-                        try {
-                            _autoAssemblers[0].AddQueueItem(id, amountNeeded);
-                        } catch (Exception) {
-                            Echo("can't queue " + quota.Key + ": " + id);
+                    string blueprintId;
+                    if (_item_ids_to_blueprint_ids.TryGetValue(quota.Key, out blueprintId)) {
+                        MyDefinitionId id;
+                        if (MyDefinitionId.TryParse(blueprintId, out id)) {
+                            try {
+                                _autoAssemblers[0].AddQueueItem(id, amountNeeded);
+                            } catch (Exception ex) {
+                                s += " " + ex.Message;
+                            }
+                        } else {
+                            s += " unparsed: " + blueprintId;
                         }
+                    } else {
+                        s += " unfound: " + quota.Key;
                     }
                 }
+
+                ss += s + "\n";
             }
+
+            infos.Add("Quota", ss);
         }
 
         private void CompileCargoInfos(Dictionary<string, string> infos, out Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts) {
@@ -573,7 +620,10 @@ namespace IngameScript {
                 a.GetQueue(items);
 
                 foreach (MyProductionItem item in items) {
-                    string id = item.BlueprintId.SubtypeName;
+                    string id;
+                    if (!_blueprint_ids_to_item_ids.TryGetValue(item.BlueprintId.ToString(), out id)) {
+                        id = item.BlueprintId.SubtypeName;
+                    }
                     if (!queue.ContainsKey(id)) {
                         queue.Add(id, item.Amount);
                     } else {
@@ -601,9 +651,9 @@ namespace IngameScript {
                 + "2) remote display lcd name format is 'CargoInfo:<grid>:<categories>:' (untested)\n"
                 + "3) text surface custom data format, each line, is 'CargoInfo:<grid>:<index>:<categories>:'\n"
                 + "4) use category Block/abc to show the Detailed Info panel from a block named 'abc'.\n"
-                + "5) lcd with name 'Quota Input' will send tasks to an uncooperative assembler. (disabled)\n"
+                + "5) lcd with name 'Quota Input' will send tasks to an uncooperative assembler.\n"
                 + "6) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
-                + "7) Name your self-repair projector with 'Repair' to see its info. (untested)\n"
+                + "7) Name your self-repair projector with 'Repair' to see its info on the Damage category.\n"
                 + "Categories: " + String.Join(", ", _categories_seen));
         }
 
