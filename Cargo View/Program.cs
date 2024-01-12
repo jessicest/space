@@ -72,34 +72,41 @@ namespace IngameScript {
         }
 
         public void Main(string argument, UpdateType updateSource) {
-            if (_reinit_counter <= 0) {
-                Reinit();
+            try {
+                if (_reinit_counter <= 0) {
+                    Reinit();
+                }
+                _reinit_counter -= 1;
+
+                Dictionary<string, string> infos = new Dictionary<string, string>();
+                Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
+
+                CompileGridTidbits(infos);
+                CompileWeaponInfos(infos);
+                CompileRepairInfos(infos);
+                CompileDetailedInfos(infos);
+                CompileHelpText(infos);
+
+                CompileCargoInfos(infos, out cargoCounts);
+                Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
+                Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
+                QueueQuotas(quotas, cargoCounts, productionCounts);
+
+                CompileOxygenInfos(infos);
+                CompileThrustInfos(infos);
+
+                ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
+                _categories_seen.UnionWith(bakedInfos.Keys);
+                EchoScriptInfo();
+                WriteLCDs(bakedInfos);
+                BroadcastInfos(bakedInfos);
+                FlushFlushables();
+            } catch (Exception ex) {
+                Runtime.UpdateFrequency = UpdateFrequency.None;
+                foreach (var surface in _text_targets.Values.SelectMany(a => a).Where(b => b.IsWorking)) {
+                    surface.Write(ex.ToString());
+                }
             }
-            _reinit_counter -= 1;
-
-            Dictionary<string, string> infos = new Dictionary<string, string>();
-            Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
-
-            CompileGridTidbits(infos);
-            CompileWeaponInfos(infos);
-            CompileRepairInfos(infos);
-            CompileDetailedInfos(infos);
-            CompileHelpText(infos);
-
-            CompileCargoInfos(infos, out cargoCounts);
-            Dictionary<string, MyFixedPoint> productionCounts = CompileProductionInfos(infos);
-            Dictionary<string, MyFixedPoint> quotas = CompileQuotas();
-            QueueQuotas(quotas, cargoCounts, productionCounts);
-
-            CompileOxygenInfos(infos);
-            CompileThrustInfos(infos);
-
-            ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
-            _categories_seen.UnionWith(bakedInfos.Keys);
-            EchoScriptInfo();
-            WriteLCDs(bakedInfos);
-            BroadcastInfos(bakedInfos);
-            FlushFlushables();
         }
 
         void FlushFlushables() {
@@ -142,7 +149,7 @@ namespace IngameScript {
             LoadBlocks(_connectors);
             LoadBlocks(_flushables, block => block.CustomData.Contains("Flush"));
             LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-            LoadBlocks(_oxygen_tanks, block => block.BlockDefinition.SubtypeName == "");
+            LoadBlocks(_oxygen_tanks, block => !block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
             LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
             LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
             LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
@@ -448,7 +455,7 @@ namespace IngameScript {
                 DeepRatio(_thrusters,
                     ts => ts
                         .Select(t => t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection))
-                        .Where(f => f < 0).Sum() / -shipMass,
+                        .Where(f => f > 0).Sum() / shipMass,
                     _ => gravity.Length(),
                     "{0:0.00} of {1:0.00} {2} ({3:0}%)", "mss", "kmss")));
 
@@ -456,12 +463,12 @@ namespace IngameScript {
             var velocityDirection = velocity.Normalized();
             var speed = velocity.Length();
             var stoppingPower = _thrusters
-                .Select(t => t.CurrentThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
+                .Select(t => t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref velocityDirection))
                 .Where(v => v > 0.001)
                 .Sum() / shipMass;
 
-            lines.Add(String.Format("Time to stop: {0}",
-                speed < 0.001 ? "stopped" : stoppingPower != 0 ? String.Format("{0.00s}", speed / stoppingPower) : "forever"));
+            lines.Add(String.Format("Time to stop: {0}\n",
+                speed < 0.001 ? "stopped" : stoppingPower != 0 ? String.Format("{0:0.00}s", speed / stoppingPower) : "forever"));
 
             WriteInfos(infos, "Thrust", lines, a => a);
         }
