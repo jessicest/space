@@ -346,7 +346,7 @@ namespace IngameScript {
         private void CompileRepairInfos(Dictionary<string, string> infos) {
             var groups = _repair_projectors.Where(p => p.IsWorking)
                 .SelectMany(p => p.RemainingBlocksPerType)
-                .GroupBy(pair => pair.Key.ToString());
+                .GroupBy(pair => pair.Key.ToString().Split('/')[1]);
 
             if (groups.Count() > 0) {
                 WriteInfos(infos, "Damage", groups, group => group.Key + ": " + group.Sum(pair => pair.Value));
@@ -455,12 +455,12 @@ namespace IngameScript {
                 VRageMath.MatrixD.Transpose(_main_cockpit.WorldMatrix));
             VRageMath.Vector3D gravityDirection = gravity.Normalized();
 
-            lines.Add(String.Format("Gravity damping: {0}",
+            lines.Add(String.Format("Gravitation: {0}",
                 DeepRatio(_thrusters,
+                    _ => gravity.Length(),
                     ts => ts
                         .Select(t => t.MaxEffectiveThrust * ((VRageMath.Vector3D)t.GridThrustDirection).Dot(ref gravityDirection))
                         .Where(f => f > 0).Sum() / shipMass,
-                    _ => gravity.Length(),
                     "{0:0.00} of {1:0.00} {2} ({3:0}%)", "mss", "kmss")));
 
             var velocity = _main_cockpit.GetShipVelocities().LinearVelocity;
