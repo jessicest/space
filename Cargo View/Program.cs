@@ -409,7 +409,7 @@ namespace IngameScript {
 
             var shipMass = _main_cockpit.CalculateShipMass().PhysicalMass;
 
-            var thrusterGroups = _thrusters.GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(t.Orientation.Forward));
+            var thrusterGroups = _thrusters.GroupBy(t => _main_cockpit.Orientation.TransformDirection(t.Orientation.Forward));
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
@@ -419,8 +419,9 @@ namespace IngameScript {
                         group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
                         s => s.CurrentDamage, s => s.MaxIntegrity, "i", "ki", "Mi", "Gi"))));
 
-            var gravity = _main_cockpit.GetTotalGravity();
-            var gravityDirection = gravity.Normalized();
+            VRageMath.Vector3D gravity = VRageMath.Vector3D.TransformNormal(_main_cockpit.GetTotalGravity(),
+                VRageMath.MatrixD.Transpose(_main_cockpit.WorldMatrix));
+            VRageMath.Vector3D gravityDirection = gravity.Normalized();
 
             lines.Add(String.Format("Gravity damping: {0}",
                 DeepRatio(_thrusters,
