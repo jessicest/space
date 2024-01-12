@@ -437,12 +437,16 @@ namespace IngameScript {
 
             var shipMass = _main_cockpit.CalculateShipMass().PhysicalMass;
 
-            var thrusterGroups = _thrusters.GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(_main_cockpit.Orientation.TransformDirection(t.Orientation.Forward)));
+            var thrusters = _thrusters.Where(t => t.IsFunctional);
+
+            var thrusterGroups = thrusters
+                .Where(t => t.IsWorking)
+                .GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(_main_cockpit.Orientation.TransformDirection(t.Orientation.Forward)));
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
                 .Select(group => String.Format("Go {0}: {1}, {2}", group.Key.ToString()[0],
-                    Ratio(group, t => t.CurrentThrust, t => t.IsWorking ? t.MaxEffectiveThrust : 0, "N", "kN", "MN", "GN"),
+                    Ratio(group, t => t.CurrentThrust, t => t.MaxEffectiveThrust, "N", "kN", "MN", "GN"),
                     Ratio(
                         group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
                         s => s.CurrentDamage, s => s.MaxIntegrity, "i", "ki", "Mi", "Gi"))));
