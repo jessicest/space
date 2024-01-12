@@ -59,7 +59,7 @@ namespace IngameScript {
             IGC.RegisterBroadcastListener("CargoInfo");
 
             _start_time = DateTime.Now;
-            Runtime.UpdateFrequency = UpdateFrequency.Update100;
+            Runtime.UpdateFrequency = UpdateFrequency.Update10;
 
             var parts = Storage?.Split(',');
             if (parts != null && parts.Length == 2 || parts[0] == _version) {
