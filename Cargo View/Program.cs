@@ -22,33 +22,33 @@ using VRageRender;
 namespace IngameScript {
     partial class Program : MyGridProgram {
         const string _version = "2.1.0";
-        readonly Dictionary<string, List<TextTarget>> _text_targets = new Dictionary<string, List<TextTarget>>();
-        readonly HashSet<string> _categories_seen = new HashSet<string>();
-        readonly List<IMyTerminalBlock> _detailed_info_sources = new List<IMyTerminalBlock>();
+        readonly Dictionary<string, List<TextTarget>> _textTargets = new Dictionary<string, List<TextTarget>>();
+        readonly HashSet<string> _categoriesSeen = new HashSet<string>();
+        readonly List<IMyTerminalBlock> _detailedInfoSources = new List<IMyTerminalBlock>();
         readonly List<IMyAirVent> _vents = new List<IMyAirVent>();
         readonly List<IMyAssembler> _assemblers = new List<IMyAssembler>();
         readonly List<IMyAssembler> _autoAssemblers = new List<IMyAssembler>();
         readonly List<IMyBatteryBlock> _batteries = new List<IMyBatteryBlock>();
-        readonly List<IMyGasTank> _hydrogen_tanks = new List<IMyGasTank>();
-        readonly List<IMyGasTank> _oxygen_tanks = new List<IMyGasTank>();
+        readonly List<IMyGasTank> _hydrogenTanks = new List<IMyGasTank>();
+        readonly List<IMyGasTank> _oxygenTanks = new List<IMyGasTank>();
         readonly List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
-        readonly List<IMyProjector> _repair_projectors = new List<IMyProjector>();
+        readonly List<IMyProjector> _repairProjectors = new List<IMyProjector>();
         readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
         readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
         readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
-        readonly List<IMyTextPanel> _quota_screens = new List<IMyTextPanel>();
+        readonly List<IMyTextPanel> _quotaScreens = new List<IMyTextPanel>();
         readonly List<IMyThrust> _thrusters = new List<IMyThrust>();
         readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
-        readonly DateTime _start_time;
+        readonly DateTime _startTime;
 
-        IMyShipController _main_cockpit = null;
-        IMyTextPanel _production_id_mappings = null;
-        readonly Dictionary<string, string> _item_ids_to_blueprint_ids = new Dictionary<string, string>();
-        readonly Dictionary<string, string> _blueprint_ids_to_item_ids = new Dictionary<string, string>();
+        IMyShipController _mainCockpit = null;
+        IMyTextPanel _productionIdMappings = null;
+        readonly Dictionary<string, string> _itemIdsToBlueprintIds = new Dictionary<string, string>();
+        readonly Dictionary<string, string> _blueprintIdsToItemIds = new Dictionary<string, string>();
 
-        int _reinit_counter = 0;
+        int _reinitCounter = 0;
         bool _echoed = false;
 
         private IMyTerminalBlock LoadBlock(string name) {
@@ -62,25 +62,25 @@ namespace IngameScript {
         public Program() {
             IGC.RegisterBroadcastListener("CargoInfo");
 
-            _start_time = DateTime.Now;
+            _startTime = DateTime.Now;
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
 
             var parts = Storage?.Split(',');
             if (parts != null && parts.Length == 2 || parts[0] == _version) {
-                DateTime.TryParse(parts[1], out _start_time);
+                DateTime.TryParse(parts[1], out _startTime);
             }
         }
 
         public void Save() {
-            Storage = _version + "," + _start_time.ToString();
+            Storage = _version + "," + _startTime.ToString();
         }
 
         public void Main(string argument, UpdateType updateSource) {
             try {
-                if (_reinit_counter <= 0) {
+                if (_reinitCounter <= 0) {
                     Reinit();
                 }
-                _reinit_counter -= 1;
+                _reinitCounter -= 1;
 
                 Dictionary<string, string> infos = new Dictionary<string, string>();
                 Dictionary<string, Dictionary<string, MyFixedPoint>> cargoCounts;
@@ -100,32 +100,32 @@ namespace IngameScript {
                 CompileThrustInfos(infos);
 
                 ImmutableDictionary<string, string> bakedInfos = infos.ToImmutableDictionary();
-                _categories_seen.UnionWith(bakedInfos.Keys);
+                _categoriesSeen.UnionWith(bakedInfos.Keys);
                 EchoScriptInfo();
                 WriteLCDs(bakedInfos);
                 BroadcastInfos(bakedInfos);
                 FlushFlushables();
             } catch (Exception ex) {
                 Runtime.UpdateFrequency = UpdateFrequency.None;
-                foreach (var surface in _text_targets.Values.SelectMany(a => a).Where(b => b.IsWorking)) {
+                foreach (var surface in _textTargets.Values.SelectMany(a => a).Where(b => b.IsWorking)) {
                     surface.Write(ex.ToString());
                 }
             }
         }
 
         void ReadProductionIDMappings() {
-            if (_production_id_mappings == null) {
+            if (_productionIdMappings == null) {
                 return;
             }
 
-            foreach (var row in _production_id_mappings.GetText().Split('\n')) {
+            foreach (var row in _productionIdMappings.GetText().Split('\n')) {
                 var parts = row.Split(':');
                 if (parts.Length == 2) {
                     string itemId = parts[0].Trim();
                     string blueprintId = parts[1].Trim();
-                    if (!_item_ids_to_blueprint_ids.ContainsKey(itemId) && !_blueprint_ids_to_item_ids.ContainsKey(blueprintId)) {
-                        _item_ids_to_blueprint_ids.Add(itemId, blueprintId);
-                        _blueprint_ids_to_item_ids.Add(blueprintId, itemId);
+                    if (!_itemIdsToBlueprintIds.ContainsKey(itemId) && !_blueprintIdsToItemIds.ContainsKey(blueprintId)) {
+                        _itemIdsToBlueprintIds.Add(itemId, blueprintId);
+                        _blueprintIdsToItemIds.Add(blueprintId, itemId);
                     }
                 }
             }
@@ -174,7 +174,7 @@ namespace IngameScript {
         }
 
         private void Reinit() {
-            _reinit_counter = 1000;
+            _reinitCounter = 1000;
 
             LoadBlocks(_assemblers);
             LoadBlocks(_autoAssemblers, block => !block.CooperativeMode);
@@ -182,10 +182,10 @@ namespace IngameScript {
             LoadBlocks(_cargos, block => block.HasInventory);
             LoadBlocks(_connectors);
             LoadBlocks(_flushables, block => block.CustomData.Contains("Flush"));
-            LoadBlocks(_hydrogen_tanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-            LoadBlocks(_oxygen_tanks, block => !block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
-            LoadBlocks(_quota_screens, block => block.CustomName.Contains("Quota Input"));
-            LoadBlocks(_repair_projectors, block => block.CustomName.Contains("Repair"));
+            LoadBlocks(_hydrogenTanks, block => block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
+            LoadBlocks(_oxygenTanks, block => !block.BlockDefinition.SubtypeName.Contains("Hydrogen"));
+            LoadBlocks(_quotaScreens, block => block.CustomName.Contains("Quota Input"));
+            LoadBlocks(_repairProjectors, block => block.CustomName.Contains("Repair"));
             LoadBlocks(_stashes, block => block.HasInventory && block.CustomName.Contains("Stash"));
             LoadBlocks(_thrusters);
             LoadBlocks(_tools);
@@ -196,15 +196,15 @@ namespace IngameScript {
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
 
-            _main_cockpit = LoadOneBlock<IMyShipController>(block => block.IsMainCockpit, false);
-            _production_id_mappings = LoadOneBlock<IMyTextPanel>(block => block.CustomName.Contains("Production IDs"), true);
+            _mainCockpit = LoadOneBlock<IMyShipController>(block => block.IsMainCockpit, false);
+            _productionIdMappings = LoadOneBlock<IMyTextPanel>(block => block.CustomName.Contains("Production IDs"), true);
             ReadProductionIDMappings();
 
             ReinitTextTargets();
         }
 
         void ReinitTextTargets() {
-            _text_targets.Clear();
+            _textTargets.Clear();
 
             List<IMyTextPanel> lcds = new List<IMyTextPanel>();
             LoadBlocks(lcds, block => block.CustomName.Contains("CargoInfo:"));
@@ -219,13 +219,13 @@ namespace IngameScript {
                 string grid_name = parts[1];
                 string[] categories = parts[2].Split(',');
 
-                if (!_text_targets.ContainsKey(grid_name)) {
-                    _text_targets.Add(grid_name, new List<TextTarget>());
+                if (!_textTargets.ContainsKey(grid_name)) {
+                    _textTargets.Add(grid_name, new List<TextTarget>());
                 }
 
                 lcd.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                 var target = new TextTarget(lcd, lcd, categories);
-                _text_targets[grid_name].Add(target);
+                _textTargets[grid_name].Add(target);
 
                 foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
                     detailedInfoSources.Add(s.Substring("Block/".Length));
@@ -254,14 +254,14 @@ namespace IngameScript {
                         string grid_name = parts[1];
                         string[] categories = parts[3].Split(',');
 
-                        if (!_text_targets.ContainsKey(grid_name)) {
-                            _text_targets.Add(grid_name, new List<TextTarget>());
+                        if (!_textTargets.ContainsKey(grid_name)) {
+                            _textTargets.Add(grid_name, new List<TextTarget>());
                         }
 
                         var surface = provider.GetSurface(index);
                         surface.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                         var target = new TextTarget(block, surface, categories);
-                        _text_targets[grid_name].Add(target);
+                        _textTargets[grid_name].Add(target);
 
                         foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
                             detailedInfoSources.Add(s.Substring("Block/".Length));
@@ -270,7 +270,7 @@ namespace IngameScript {
                 }
             }
 
-            _detailed_info_sources.AddRange(detailedInfoSources
+            _detailedInfoSources.AddRange(detailedInfoSources
                 .Select(s => GridTerminalSystem.GetBlockWithName(s))
                 .Where(b => b != null));
         }
@@ -347,7 +347,7 @@ namespace IngameScript {
 
             // the list below should stay sorted, because all the other screens are sorted
 
-            double elapsedTime = (DateTime.Now - _start_time).TotalDays;
+            double elapsedTime = (DateTime.Now - _startTime).TotalDays;
             s += String.Format("Assemblers: active {0}, blocked {0}, idle {0}\n",
                 _assemblers.Where(a => a.IsWorking && a.IsProducing).Count(),
                 _assemblers.Where(a => a.IsWorking && !a.IsProducing && !a.IsQueueEmpty).Count(),
@@ -358,11 +358,11 @@ namespace IngameScript {
             s += String.Format("Cargo: {0}\n", Ratio(Inventories(_cargos), inv => inv.CurrentVolume, inv => inv.MaxVolume, "kL", "ML"));
             s += String.Format("Cargo mass: {0}\n", WithUnits(Inventories(_cargos).Select(inv => (float)inv.CurrentMass).Sum(), "kg", "t", "kt", "Mt"));
             s += String.Format("Docked ships: {0}\n", _connectors.Where(c => c.IsFunctional && c.IsConnected).Count());
-            s += String.Format("H2: {0}\n", Ratio(_hydrogen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
-            s += String.Format("O2: {0}\n", Ratio(_oxygen_tanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
+            s += String.Format("H2: {0}\n", Ratio(_hydrogenTanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
+            s += String.Format("O2: {0}\n", Ratio(_oxygenTanks, b => b.FilledRatio * b.Capacity, b => b.Capacity, "L", "kL", "ML"));
             s += String.Format("Script v{0}: {1} days uptime\n", _version, Math.Floor(elapsedTime));
-            if (_main_cockpit != null) {
-                s += String.Format("Ship mass: {0}\n", _main_cockpit.CalculateShipMass().PhysicalMass);
+            if (_mainCockpit != null) {
+                s += String.Format("Ship mass: {0}\n", _mainCockpit.CalculateShipMass().PhysicalMass);
             }
             s += String.Format("Turrets with target: {0}\n", Ratio(_turrets, t => t.HasTarget ? 1 : 0, _ => 1, ""));
 
@@ -374,7 +374,7 @@ namespace IngameScript {
         }
 
         private void CompileRepairInfos(Dictionary<string, string> infos) {
-            var groups = _repair_projectors.Where(p => p.IsWorking)
+            var groups = _repairProjectors.Where(p => p.IsWorking)
                 .SelectMany(p => p.RemainingBlocksPerType)
                 .GroupBy(pair => pair.Key.ToString().Split('/')[1]);
 
@@ -384,7 +384,7 @@ namespace IngameScript {
         }
 
         void CompileDetailedInfos(Dictionary<string, string> infos) {
-            foreach (var block in _detailed_info_sources) {
+            foreach (var block in _detailedInfoSources) {
                 infos.Add("Block/" + block.CustomName, block.DetailedInfo);
             }
         }
@@ -452,7 +452,7 @@ namespace IngameScript {
                 counts.Add(vent.CustomName, (MyFixedPoint)(100 * vent.GetOxygenLevel()));
             }
 
-            foreach (IMyGasTank tank in _oxygen_tanks) {
+            foreach (IMyGasTank tank in _oxygenTanks) {
                 counts.Add(tank.CustomName, (MyFixedPoint)(100 * tank.FilledRatio));
             }
 
@@ -460,18 +460,18 @@ namespace IngameScript {
         }
 
         private void CompileThrustInfos(Dictionary<string, string> infos) {
-            if (_main_cockpit == null) {
+            if (_mainCockpit == null) {
                 infos.Add("Thrust", "Thrust: no main cockpit found");
                 return;
             }
 
-            var shipMass = _main_cockpit.CalculateShipMass().PhysicalMass;
+            var shipMass = _mainCockpit.CalculateShipMass().PhysicalMass;
 
             var thrusters = _thrusters.Where(t => t.IsFunctional);
 
             var thrusterGroups = thrusters
                 .Where(t => t.IsWorking)
-                .GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(_main_cockpit.Orientation.TransformDirection(t.Orientation.Forward)));
+                .GroupBy(t => VRageMath.Base6Directions.GetFlippedDirection(_mainCockpit.Orientation.TransformDirection(t.Orientation.Forward)));
 
             List<string> lines = new List<string>();
             lines.AddRange(thrusterGroups
@@ -481,8 +481,8 @@ namespace IngameScript {
                         group.Select(t => t.CubeGrid.GetCubeBlock(t.Position)).Where(s => s != null && !s.IsDestroyed),
                         s => s.CurrentDamage, s => s.MaxIntegrity, "i", "ki", "Mi", "Gi"))));
 
-            VRageMath.Vector3D gravity = VRageMath.Vector3D.TransformNormal(_main_cockpit.GetTotalGravity(),
-                VRageMath.MatrixD.Transpose(_main_cockpit.WorldMatrix));
+            VRageMath.Vector3D gravity = VRageMath.Vector3D.TransformNormal(_mainCockpit.GetTotalGravity(),
+                VRageMath.MatrixD.Transpose(_mainCockpit.WorldMatrix));
             VRageMath.Vector3D gravityDirection = gravity.Normalized();
 
             lines.Add(String.Format("Gravitation: {0}",
@@ -493,7 +493,7 @@ namespace IngameScript {
                         .Where(f => f > 0).Sum() / shipMass,
                     "{0:0.00} of {1:0.00} {2} ({3:0}%)", "mss", "kmss")));
 
-            var velocity = _main_cockpit.GetShipVelocities().LinearVelocity;
+            var velocity = _mainCockpit.GetShipVelocities().LinearVelocity;
             var velocityDirection = velocity.Normalized();
             var speed = velocity.Length();
             var stoppingPower = _thrusters
@@ -512,7 +512,7 @@ namespace IngameScript {
             System.Text.RegularExpressions.Regex regex
                 = new System.Text.RegularExpressions.Regex(@"^\s*([^:]+): (\d+)\s*$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-            foreach (IMyTextPanel lcd in _quota_screens) {
+            foreach (IMyTextPanel lcd in _quotaScreens) {
                 if (!lcd.IsWorking) {
                     continue;
                 }
@@ -560,7 +560,7 @@ namespace IngameScript {
                 }
                 if (amountNeeded > 0) {
                     string blueprintId;
-                    if (_item_ids_to_blueprint_ids.TryGetValue(quota.Key, out blueprintId)) {
+                    if (_itemIdsToBlueprintIds.TryGetValue(quota.Key, out blueprintId)) {
                         MyDefinitionId id;
                         if (MyDefinitionId.TryParse(blueprintId, out id)) {
                             try {
@@ -621,7 +621,7 @@ namespace IngameScript {
 
                 foreach (MyProductionItem item in items) {
                     string id;
-                    if (!_blueprint_ids_to_item_ids.TryGetValue(item.BlueprintId.ToString(), out id)) {
+                    if (!_blueprintIdsToItemIds.TryGetValue(item.BlueprintId.ToString(), out id)) {
                         id = item.BlueprintId.SubtypeName;
                     }
                     if (!queue.ContainsKey(id)) {
@@ -654,7 +654,7 @@ namespace IngameScript {
                 + "5) lcd with name 'Quota Input' will send tasks to an uncooperative assembler.\n"
                 + "6) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
                 + "7) Name your self-repair projector with 'Repair' to see its info on the Damage category.\n"
-                + "Categories: " + String.Join(", ", _categories_seen));
+                + "Categories: " + String.Join(", ", _categoriesSeen));
         }
 
         void EchoScriptInfo() {
@@ -666,7 +666,7 @@ namespace IngameScript {
 
         void WriteLCDs(ImmutableDictionary<string, string> infos, string gridName = "") {
             List<TextTarget> grid_targets;
-            if (_text_targets.TryGetValue(gridName, out grid_targets)) {
+            if (_textTargets.TryGetValue(gridName, out grid_targets)) {
                 foreach (var target in grid_targets) {
                     if (!target.IsWorking) {
                         continue;
