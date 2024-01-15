@@ -224,7 +224,7 @@ namespace IngameScript {
                 }
 
                 lcd.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
-                var target = new LcdTarget(lcd, categories);
+                var target = new TextTarget(lcd, lcd, categories);
                 _text_targets[grid_name].Add(target);
 
                 foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
@@ -260,7 +260,7 @@ namespace IngameScript {
 
                         var surface = provider.GetSurface(index);
                         surface.ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
-                        var target = new SurfaceTarget(block, surface, categories);
+                        var target = new TextTarget(block, surface, categories);
                         _text_targets[grid_name].Add(target);
 
                         foreach (string s in categories.Where(s => s.StartsWith("Block/"))) {
@@ -700,38 +700,11 @@ namespace IngameScript {
             IGC.SendBroadcastMessage("CargoInfo", MyTuple.Create(Me.CubeGrid.CustomName, infos));
         }
 
-        interface TextTarget {
-            bool IsWorking { get; }
-            IEnumerable<string> Categories { get; set; }
-            void Write(string s);
-        }
-
-        class LcdTarget : TextTarget {
-            readonly IMyTextPanel _lcd;
-
-            public LcdTarget(IMyTextPanel lcd, IEnumerable<string> categories) {
-                _lcd = lcd;
-                Categories = categories;
-            }
-
-            public bool IsWorking {
-                get {
-                    return _lcd.IsWorking;
-                }
-            }
-
-            public IEnumerable<string> Categories { get; set; }
-
-            public void Write(string s) {
-                _lcd.WriteText(s);
-            }
-        }
-
-        class SurfaceTarget : TextTarget {
+        class TextTarget {
             readonly IMyTerminalBlock _owner;
             readonly IMyTextSurface _surface;
 
-            public SurfaceTarget(IMyTerminalBlock owner, IMyTextSurface surface, IEnumerable<string> categories) {
+            public TextTarget(IMyTerminalBlock owner, IMyTextSurface surface, IEnumerable<string> categories) {
                 _owner = owner;
                 _surface = surface;
                 Categories = categories;
