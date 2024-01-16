@@ -35,12 +35,13 @@ namespace IngameScript {
         readonly List<IMyProjector> _repairProjectors = new List<IMyProjector>();
         readonly List<IMyShipConnector> _connectors = new List<IMyShipConnector>();
         readonly List<IMyShipToolBase> _tools = new List<IMyShipToolBase>();
-        readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
+        public readonly List<IMyTerminalBlock> _cargos = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _flushables = new List<IMyTerminalBlock>();
         readonly List<IMyTerminalBlock> _stashes = new List<IMyTerminalBlock>();
         readonly List<IMyTextPanel> _quotaScreens = new List<IMyTextPanel>();
         readonly List<IMyThrust> _thrusters = new List<IMyThrust>();
         readonly List<IMyUserControllableGun> _weapons = new List<IMyUserControllableGun>();
+        readonly List<string> _connectedGridNames = new List<string>();
         readonly DateTime _startTime;
 
         IMyShipController _mainCockpit = null;
@@ -110,6 +111,7 @@ namespace IngameScript {
                 foreach (var surface in _textTargets.Values.SelectMany(a => a).Where(b => b.IsWorking)) {
                     surface.Write(ex.ToString());
                 }
+                throw ex;
             }
         }
 
@@ -161,13 +163,13 @@ namespace IngameScript {
                 && (f == null || f(block)));
         }
 
-        T LoadOneBlock<T>(Func<T, bool> f, bool throwIfAbsent) where T : class, IMyTerminalBlock {
+        T LoadOneBlock<T>(string name, Func<T, bool> f, bool throwIfAbsent) where T : class, IMyTerminalBlock {
             List<T> list = new List<T>();
             LoadBlocks(list, f);
             if (list.Count > 0) {
                 return list[0];
             } else if (throwIfAbsent) {
-                throw new Exception("wait but i didn't find that thingo");
+                throw new Exception("wait but i didn't find that thingo: " + name);
             } else {
                 return null;
             }
@@ -196,8 +198,8 @@ namespace IngameScript {
             _flushables.AddRange(_assemblers);
             _flushables.AddRange(_tools);
 
-            _mainCockpit = LoadOneBlock<IMyShipController>(block => block.IsMainCockpit, false);
-            _productionIdMappings = LoadOneBlock<IMyTextPanel>(block => block.CustomName.Contains("Production IDs"), true);
+            _mainCockpit = LoadOneBlock<IMyShipController>("cockpit", block => block.IsMainCockpit, false);
+            _productionIdMappings = LoadOneBlock<IMyTextPanel>("mappings", block => block.CustomName.Contains("Production IDs"), false);
             ReadProductionIDMappings();
 
             ReinitTextTargets();
@@ -279,7 +281,7 @@ namespace IngameScript {
             return blocks.Where(block => block.IsFunctional);
         }
 
-        string WithUnits(float value, string label, params string[] labels) {
+        static string WithUnits(float value, string label, params string[] labels) {
             int candidate = 0;
             while (candidate < labels.Count() && value >= 10000.0f) {
                 value /= 1000.0f;
@@ -289,7 +291,7 @@ namespace IngameScript {
             return value + label;
         }
 
-        string ToUnits(double[] values, params string[] units) {
+        static string ToUnits(double[] values, params string[] units) {
             int unitsIndex = 0;
             while (unitsIndex + 1 < units.Length && values[0] >= 10000.0) {
                 for (int i = 0; i < values.Length; ++i) {
@@ -300,15 +302,15 @@ namespace IngameScript {
             return units[unitsIndex];
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, params string[] units) {
+        static string Ratio<T>(IEnumerable<T> values, Func<T, int> getEnumerator, Func<T, int> getDenominator, params string[] units) {
             return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, params string[] units) {
+        static string Ratio<T>(IEnumerable<T> values, Func<T, MyFixedPoint> getEnumerator, Func<T, MyFixedPoint> getDenominator, params string[] units) {
             return Ratio(values, v => (float)getEnumerator(v), v => (float)getDenominator(v), units);
         }
 
-        string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, params string[] units) {
+        static string Ratio<T>(IEnumerable<T> values, Func<T, double> getEnumerator, Func<T, double> getDenominator, params string[] units) {
             return DeepRatio(
                 values,
                 vs => vs.Select(v => getEnumerator(v)).Sum(),
@@ -317,7 +319,7 @@ namespace IngameScript {
                 units);
         }
 
-        string DeepRatio<T>(IEnumerable<T> values, Func<IEnumerable<T>, double> getEnumerator, Func<IEnumerable<T>, double> getDenominator, string formatString, params string[] units) {
+        static string DeepRatio<T>(IEnumerable<T> values, Func<IEnumerable<T>, double> getEnumerator, Func<IEnumerable<T>, double> getDenominator, string formatString, params string[] units) {
             IEnumerable<T> values2 = values.Where(v => !(v is IMyTerminalBlock) || ((IMyTerminalBlock)v).IsFunctional);
 
             
@@ -329,7 +331,28 @@ namespace IngameScript {
             return b != 0 ? String.Format(formatString, a, b, unit, a * 100.0 / b) : "None";
         }
 
-        IEnumerable<IMyInventory> Inventories(IMyTerminalBlock block) {
+        static IEnumerable<MyInventoryItem> Items(IMyInventory inv) {
+            List<MyInventoryItem> items = new List<MyInventoryItem>();
+            inv.GetItems(items);
+            return items;
+        }
+
+        static IEnumerable<MyInventoryItem> Items(IMyTerminalBlock block) {
+            if (block.IsFunctional) {
+                return Enumerable
+                    .Range(0, block.InventoryCount)
+                    .Select(i => block.GetInventory(i))
+                    .SelectMany(inv => Items(inv));
+            } else {
+                return Enumerable.Empty<MyInventoryItem>();
+            }
+        }
+
+        static IEnumerable<MyInventoryItem> Items(IEnumerable<IMyTerminalBlock> blocks) {
+            return blocks.SelectMany(block => Items(block));
+        }
+
+        static IEnumerable<IMyInventory> Inventories(IMyTerminalBlock block) {
             if (block.IsFunctional) {
                 return Enumerable.Range(0, block.InventoryCount).Select(i => block.GetInventory(i));
             } else {
@@ -337,7 +360,7 @@ namespace IngameScript {
             }
         }
 
-        IEnumerable<IMyInventory> Inventories(IEnumerable<IMyTerminalBlock> blocks) {
+        static IEnumerable<IMyInventory> Inventories(IEnumerable<IMyTerminalBlock> blocks) {
             return blocks.SelectMany(block => Inventories(block));
         }
 
@@ -654,6 +677,7 @@ namespace IngameScript {
                 + "5) lcd with name 'Quota Input' will send tasks to an uncooperative assembler.\n"
                 + "6) Half-full assemblers, tools, and blocks with 'Flush' in their customdata will be flushed to Stash-named boxes.\n"
                 + "7) Name your self-repair projector with 'Repair' to see its info on the Damage category.\n"
+                + "Output screens: " + _textTargets.Count + "\n"
                 + "Categories: " + String.Join(", ", _categoriesSeen));
         }
 
@@ -720,6 +744,108 @@ namespace IngameScript {
 
             public void Write(string s) {
                 _surface.WriteText(s);
+            }
+        }
+
+        class Bags {
+            readonly List<IMyTerminalBlock> _bags;
+
+            public Bags(List<IMyTerminalBlock> bags) {
+                _bags = bags;
+            }
+
+            public IEnumerable<MyInventoryItem> Items {
+                get {
+                    return Program.Items(_bags);
+                }
+            }
+
+            public IEnumerable<IMyInventory> Inventories {
+                get {
+                    return Program.Inventories(_bags);
+                }
+            }
+
+            public void Shuffle() {
+                Random random = new Random();
+                _bags.SortNoAlloc((_a, _b) => random.Next());
+            }
+
+            public void SubtractAmountsFrom(Dictionary<string, MyFixedPoint> amounts) {
+                foreach (var item in Program.Items(_bags)) {
+                    string label = item.Type.SubtypeId;
+                    if (item.Type.TypeId != "Ore" && amounts.ContainsKey(item.Type.SubtypeId)) {
+                        amounts[label] = MyFixedPoint.Max(MyFixedPoint.Zero, amounts[label] - item.Amount);
+                    }
+                }
+            }
+
+            public bool TransferItemsTo(Bags targetBags, Dictionary<string, MyFixedPoint> amountsNeeded) {
+                bool somethingMoved = false;
+                foreach (var source in Program.Inventories(_bags)) {
+                    foreach (var item in Program.Items(source)) {
+                        string label = item.Type.SubtypeId;
+                        MyFixedPoint amountNeeded;
+                        if (!amountsNeeded.TryGetValue(label, out amountNeeded)) {
+                            continue;
+                        }
+
+                        if (amountNeeded <= MyFixedPoint.Zero) {
+                            continue;
+                        }
+
+                        MyFixedPoint amountAvailable = item.Amount;
+                        MyFixedPoint fullAmount = MyFixedPoint.Max(MyFixedPoint.Zero, amountNeeded - amountAvailable);
+                        foreach (var target in Program.Inventories(targetBags._bags)) {
+                            if (source.CanTransferItemTo(target, item.Type)) {
+                                var amount = fullAmount;
+                                while (amount > MyFixedPoint.Zero && !target.CanItemsBeAdded(amount, item.Type)) {
+                                    amount.RawValue >>= 1;
+                                }
+                                if (source.TransferItemTo(target, item, amount)) {
+                                    fullAmount -= amount;
+                                    amountsNeeded[label] -= amount;
+                                    somethingMoved = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return somethingMoved;
+            }
+        }
+
+        class Requisition {
+            readonly string _shipName;
+            readonly Dictionary<string, MyFixedPoint> _requiredAmounts = new Dictionary<string, MyFixedPoint>();
+            Bags _shipBags = null;
+
+            public Requisition(string shipName, Dictionary<string, MyFixedPoint> requiredAmounts) {
+                _shipName = shipName;
+                _requiredAmounts = requiredAmounts;
+            }
+
+            public void Reinit(Program program) {
+                var cargo = new List<IMyTerminalBlock>();
+                program.GridTerminalSystem.GetBlocksOfType(cargo, block => block.CubeGrid.CustomName == _shipName && block.HasInventory);
+                if (cargo.Count > 0) {
+                    _shipBags = new Bags(cargo);
+                } else {
+                    _shipBags = null;
+                }
+            }
+
+            public void Run(Bags baseBags) {
+                if (_shipBags != null) {
+                    _shipBags.Shuffle();
+
+                    var requiredAmounts = new Dictionary<string, MyFixedPoint>(_requiredAmounts);
+                    _shipBags.SubtractAmountsFrom(requiredAmounts);
+                    if (!baseBags.TransferItemsTo(_shipBags, requiredAmounts)) {
+                        _shipBags = null;
+                    }
+                }
             }
         }
     }
